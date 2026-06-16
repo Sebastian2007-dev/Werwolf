@@ -89,6 +89,7 @@ const witchUi       = document.getElementById('witch-ui');
 const witchVictim   = document.getElementById('witch-victim');
 const witchHeal     = document.getElementById('witch-heal');
 const witchPoison   = document.getElementById('witch-poison');
+const witchConfirm  = document.getElementById('witch-confirm');
 const witchPass     = document.getElementById('witch-pass');
 const witchPoisonTargets = document.getElementById('witch-poison-targets');
 const viewResult    = document.getElementById('view-result');
@@ -122,7 +123,8 @@ function resetActionPanels() {
     witchPoisonTargets.hidden = true;
     targetList.innerHTML     = '';
     witchPoisonTargets.innerHTML = '';
-    nightState = { type: null, selected: [], maxSelect: 1 };
+    witchHeal.classList.remove('is-active');
+    nightState = { type: null, selected: [], maxSelect: 1, witchHealSelected: false, witchPoisonTarget: null };
 }
 
 function buildTargetButtons(container, players, onSelect) {
@@ -138,7 +140,7 @@ function buildTargetButtons(container, players, onSelect) {
 }
 
 // Receive night turn
-socket.on('your-night-turn', ({ group, hint, actionType, players, nightVictim }) => {
+socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
     showOverlay();
     showActionUI();
     resetActionPanels();
@@ -147,36 +149,42 @@ socket.on('your-night-turn', ({ group, hint, actionType, players, nightVictim })
     nightState.type = actionType;
 
     if (actionType === 'witch') {
+        const victim = extra?.victim ?? null;
         witchUi.hidden = false;
 
-        if (nightVictim) {
-            const victimName = players.find(p => p.id === nightVictim)?.name ?? nightVictim;
-            witchVictim.textContent = `Die Werwölfe haben ${victimName} gewählt.`;
-            nightState.witchVictim = nightVictim;
-        } else {
-            witchVictim.textContent = 'Diese Nacht wurde niemand angegriffen.';
-            witchHeal.hidden = true;
-        }
+        witchVictim.textContent = victim
+            ? `Die Werwölfe haben ${victim.name} gewählt.`
+            : 'Diese Nacht wurde niemand angegriffen.';
 
-        witchHeal.hidden = !nightVictim;
-        witchPoison.hidden = false;
+        witchHeal.hidden   = !victim || !(extra?.canHeal ?? true);
+        witchPoison.hidden = !(extra?.canPoison ?? true);
 
         witchHeal.onclick = () => {
-            nightState.selected = [{ heal: nightVictim }];
-            socket.emit('night-action', { action: 'heal', targetId: nightVictim });
-            showWait('Deine Entscheidung wurde gespeichert.');
+            nightState.witchHealSelected = !nightState.witchHealSelected;
+            witchHeal.classList.toggle('is-active', nightState.witchHealSelected);
         };
 
         witchPoison.onclick = () => {
-            witchPoisonTargets.hidden = false;
-            buildTargetButtons(witchPoisonTargets, players, (p) => {
-                socket.emit('night-action', { action: 'poison', targetId: p.id });
-                showWait('Deine Entscheidung wurde gespeichert.');
+            witchPoisonTargets.hidden = !witchPoisonTargets.hidden;
+            if (!witchPoisonTargets.hidden && witchPoisonTargets.children.length === 0) {
+                buildTargetButtons(witchPoisonTargets, players, (p, btn) => {
+                    witchPoisonTargets.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
+                    btn.classList.add('is-selected');
+                    nightState.witchPoisonTarget = p.id;
+                });
+            }
+        };
+
+        witchConfirm.onclick = () => {
+            socket.emit('night-action', {
+                heal: nightState.witchHealSelected || undefined,
+                poisonTargetId: nightState.witchPoisonTarget || undefined,
             });
+            showWait('Deine Entscheidung wurde gespeichert.');
         };
 
         witchPass.onclick = () => {
-            socket.emit('night-action', { action: 'pass' });
+            socket.emit('night-action', {});
             showWait('Du hast nichts getan.');
         };
 

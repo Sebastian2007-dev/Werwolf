@@ -1,5 +1,37 @@
 # Changelog – Raum-Logik
 
+## [2026-06-16 18:45] Hexe: Toggle-Confirm-Flow implementiert
+
+### Frontend (frontend/js/game.js + game.html + game.css)
+- Hexe-UI umgebaut von "Klick = sofort" auf "Wählen → Bestätigen":
+  - "Heilen" toggelt `is-active`-Klasse (visuelles Feedback, kein sofortiger Emit)
+  - "Vergiften…" klappt Zielliste ein/aus; Ziel-Klick selektiert (rückgängig durch erneutes Klicken auf "Vergiften")
+  - "Bestätigen" sendet beides gemeinsam: `{ heal: true, poisonTargetId: '...' }` (beliebige Kombination)
+  - "Nichts tun" sendet leeres Payload (kein Trank)
+- `game.html`: `#witch-confirm`-Button + `witch-ui__actions`-Wrapper ergänzt; "Nichts tun" dorthin verschoben
+- `game.css`: `.witch-btn--confirm`, `.witch-btn--heal.is-active`, `.witch-ui__actions` ergänzt
+- `game.js`: `witchConfirm`-Referenz + `nightState.witchHealSelected`/`witchPoisonTarget` in Reset initialisiert
+
+## [2026-06-16 18:15] Dorfmatratze vollständig implementiert + Hexe-Bugfixes
+
+### Backend (backend/server.js)
+- `NIGHT_ORDER`: Dorfmatratze vor Seherin verschoben (muss vor den Werwölfen wählen)
+- `startNight`: `g.dorfmatraze_sleep` und `g.dorfmatraze_protected` pro Nacht initialisiert
+- `advanceNight`: Hexe erhält `extra.victim = null` wenn Werwölfe die Dorfmatratze direkt angriffen (nur Erzähler erfährt davon); `targets` → `players` im Emit umbenannt (war Feldname-Mismatch mit Frontend)
+- `advanceNight`: Hexe erhält `extra.canHeal` und `extra.canPoison` Flags
+- `processNightAction` (Hexe): payload-Parser auf beide API-Varianten erweitert (`heal: true` und `action:'heal'`; `poisonTargetId` und `action:'poison'`)
+- `processNightAction` (Dorfmatratze): neuer Case — speichert `g.dorfmatraze_sleep` aus `payload.targetId`
+- `endNight`: Dorfmatratze-Sterbelogik implementiert:
+  - Wölfe wählen Dorfmatratze direkt → `dorfmatraze_protected = true`, niemand stirbt
+  - Wölfe wählen Person wo Dorfmatratze schläft → beide sterben; auch wenn Hexe das Primäropfer heilt stirbt die Dorfmatratze trotzdem
+- `endNight`: Zusammenfassung unterscheidet drei Szenarien (Schutz / Mitsterben / normal)
+
+### Frontend (frontend/js/game.js)
+- `your-night-turn` Handler: `players` statt `targets`, `extra` statt `nightVictim` destrukturiert
+- Hexe: `witchHeal` sendet `{ heal: true }` statt `{ action: 'heal', targetId }`
+- Hexe: Giftliste sendet `{ poisonTargetId: p.id }` statt `{ action: 'poison', targetId }`
+- Hexe: `witchHeal.hidden` und `witchPoison.hidden` reagieren auf `extra.canHeal` / `extra.canPoison`
+
 ## [2026-06-16 17:30] Amor vollständig implementiert + Siegbedingungen
 
 ### Backend (backend/server.js)

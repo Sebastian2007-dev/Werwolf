@@ -22,10 +22,10 @@ const NIGHT_ORDER = [
     { group: 'Dieb',            roleIds: ['Dieb'],                                              firstNightOnly: true,   actionType: 'select-one',    hint: 'Du kannst eine alternative Rolle übernehmen.' },
     { group: 'Wildes Kind',     roleIds: ['WildesKind'],                                        firstNightOnly: true,   actionType: 'select-one',    hint: 'Wähle dein Idol aus.' },
     { group: 'Silberschmied',   roleIds: ['Silberschmied'],                                    firstNightOnly: true,   actionType: 'select-one',    hint: 'Rüste einen Spieler mit Silberwaffen aus.' },
+    { group: 'Dorfmatratze',    roleIds: ['Dorfmatraze'],                                      firstNightOnly: false,  actionType: 'select-one',    hint: 'Bei wem schläfst du heute Nacht?' },
     { group: 'Seherin',         roleIds: ['Seherin'],                                          firstNightOnly: false,  actionType: 'view',          hint: 'Schau dir die Karte eines Spielers an.' },
     { group: 'Werwölfe',        roleIds: ['Werwolf_blau','Werwolf_gelb','Werwolf_gruen','Werwolf_rot'], firstNightOnly: false, actionType: 'kill', hint: 'Wählt gemeinsam ein Opfer aus.' },
     { group: 'Hexe',            roleIds: ['Hexe'],                                             firstNightOnly: false,  actionType: 'witch',         hint: 'Du kannst heilen oder vergiften.' },
-    { group: 'Dorfmatratze',    roleIds: ['Dorfmatraze'],                                      firstNightOnly: false,  actionType: 'select-one',    hint: 'Bei wem schläfst du heute Nacht?' },
     { group: 'Einsamer Wolf',   roleIds: ['EinsamerWolf'],                                     everySecondNight: true, actionType: 'select-one',    hint: 'Wähle einen Werwolf, den du tötest.' },
     { group: 'Jack the Ripper', roleIds: ['JackTheRipper'],                                    firstNightOnly: false,  actionType: 'select-one',    hint: 'Wähle deinen heutigen Besuch.' },
     { group: 'Gendarm',         roleIds: ['Gendarm'],                                          firstNightOnly: false,  actionType: 'optional-kill', hint: 'Möchtest du jemanden verhaften? (Optional, einmalig)' },
@@ -162,11 +162,13 @@ function startNight(code, room) {
     g.phase       = 'night';
     g.nightQueue  = buildNightQueue(room.assignments, g.alive, g.round);
     g.nightIdx    = -1;
-    g.nightVictim = null;
-    g.hexeHealTarget  = null;
-    g.hexePoisonTarget= null;
-    g.pendingDeaths   = new Set();
-    g.nightLog        = [];
+    g.nightVictim        = null;
+    g.hexeHealTarget     = null;
+    g.hexePoisonTarget   = null;
+    g.pendingDeaths      = new Set();
+    g.nightLog           = [];
+    g.dorfmatraze_sleep     = null;
+    g.dorfmatraze_protected = false;
 
     addEvent(g, `Nacht ${g.round} beginnt.`);
     io.to(code).emit('phase-changed', { phase: 'night', round: g.round });
@@ -196,14 +198,20 @@ function advanceNight(code, room) {
 
         const extra = {};
         if (entry.actionType === 'witch') {
-            extra.victim    = g.nightVictim ? { id: g.nightVictim, name: playerName(room, g.nightVictim) } : null;
+            // Hide the wolf victim from Hexe if the victim is the protected Dorfmatratze
+            const dorfmatrazeId = Object.entries(room.assignments)
+                .find(([id, rid]) => rid === 'Dorfmatraze' && g.alive.has(id))?.[0];
+            const victimIsProtected = dorfmatrazeId && g.nightVictim === dorfmatrazeId;
+            extra.victim    = (g.nightVictim && !victimIsProtected)
+                ? { id: g.nightVictim, name: playerName(room, g.nightVictim) }
+                : null;
             extra.canHeal   = !g.hexeUsedHeal;
             extra.canPoison = !g.hexeUsedPoison;
         }
 
         io.to(pid).emit('your-night-turn', {
             group: entry.group, actionType: entry.actionType,
-            hint: entry.hint, targets: myTargets, extra,
+            hint: entry.hint, players: myTargets, extra,
         });
     });
 
@@ -258,18 +266,28 @@ function processNightAction(code, room, entry, actorId, payload) {
         g.nightLog.push(`Seherin sah: ${tname} = ${trole}`);
 
     } else if (entry.actionType === 'witch') {
-        const { heal, poisonTargetId } = payload;
-        if (heal && !g.hexeUsedHeal && g.nightVictim) {
-            g.hexeHealTarget  = g.nightVictim;
-            g.hexeUsedHeal    = true;
+        const isHeal      = payload.heal || payload.action === 'heal';
+        const poisonTarget = payload.poisonTargetId ?? (payload.action === 'poison' ? payload.targetId : null);
+        if (isHeal && !g.hexeUsedHeal && g.nightVictim) {
+            g.hexeHealTarget = g.nightVictim;
+            g.hexeUsedHeal   = true;
             addEvent(g, `Hexe hat ihr Heilmittel eingesetzt.`);
             g.nightLog.push(`Hexe heilt: ${playerName(room, g.nightVictim)}`);
         }
-        if (poisonTargetId && !g.hexeUsedPoison) {
-            g.hexePoisonTarget = poisonTargetId;
+        if (poisonTarget && !g.hexeUsedPoison) {
+            g.hexePoisonTarget = poisonTarget;
             g.hexeUsedPoison   = true;
             addEvent(g, `Hexe hat ihr Gift eingesetzt.`);
-            g.nightLog.push(`Hexe vergiftet: ${playerName(room, poisonTargetId)}`);
+            g.nightLog.push(`Hexe vergiftet: ${playerName(room, poisonTarget)}`);
+        }
+
+    } else if (entry.group === 'Dorfmatratze') {
+        if (payload.targetId) {
+            // TODO: exclude Händler's shopping target from selection when Händler is implemented
+            g.dorfmatraze_sleep = payload.targetId;
+            const tname = playerName(room, payload.targetId);
+            addEvent(g, `Dorfmatratze schläft heute bei ${tname}.`);
+            g.nightLog.push(`Dorfmatratze → ${tname}`);
         }
 
     } else if (entry.group === 'Amor') {
@@ -317,9 +335,28 @@ function endNight(code, room) {
     const g = room.game;
     g.phase = 'night-summary';
 
-    // Compute deaths
-    if (g.nightVictim && g.hexeHealTarget !== g.nightVictim) {
-        g.pendingDeaths.add(g.nightVictim);
+    // Find alive Dorfmatratze (if in game)
+    const dorfmatrazeId = Object.entries(room.assignments)
+        .find(([id, rid]) => rid === 'Dorfmatraze' && g.alive.has(id))?.[0];
+
+    // Compute wolf-attack deaths (with Dorfmatratze mechanic)
+    if (g.nightVictim) {
+        if (dorfmatrazeId && g.nightVictim === dorfmatrazeId) {
+            // Wolves attacked Dorfmatratze directly → she is protected, nothing happens
+            g.dorfmatraze_protected = true;
+            addEvent(g, `Die Werwölfe griffen die Dorfmatratze direkt an — sie war nicht zuhause.`);
+            g.nightLog.push(`Dorfmatratze geschützt (direkt angegriffen)`);
+        } else {
+            // Normal wolf kill — primary victim dies unless Hexe healed
+            if (g.hexeHealTarget !== g.nightVictim) {
+                g.pendingDeaths.add(g.nightVictim);
+            }
+            // If Dorfmatratze was sleeping at the wolf's target → she also dies
+            if (dorfmatrazeId && g.dorfmatraze_sleep === g.nightVictim) {
+                g.pendingDeaths.add(dorfmatrazeId);
+                g.nightLog.push(`Dorfmatratze stirbt mit (schlief bei ${playerName(room, g.nightVictim)})`);
+            }
+        }
     }
     if (g.hexePoisonTarget) g.pendingDeaths.add(g.hexePoisonTarget);
 
@@ -338,12 +375,22 @@ function endNight(code, room) {
 
     // Build summary text
     const lines = [];
-    if (g.nightVictim) {
+    if (g.dorfmatraze_protected) {
+        lines.push(`Die Werwölfe haben heute Nacht die Dorfmatratze angegriffen — sie war aber nicht zuhause.`);
+    } else if (g.nightVictim) {
         const vname = playerName(room, g.nightVictim);
+        const dorfmatratzeDied = dorfmatrazeId && g.pendingDeaths.has(dorfmatrazeId)
+            && g.dorfmatraze_sleep === g.nightVictim;
         if (g.hexeHealTarget === g.nightVictim) {
             lines.push(`Die Werwölfe haben ${vname} angegriffen — die Hexe hat sie/ihn gerettet.`);
+            if (dorfmatratzeDied) {
+                lines.push(`Die Dorfmatratze schlief bei ${vname} und ist trotzdem gestorben.`);
+            }
         } else {
             lines.push(`Die Werwölfe haben ${vname} getötet.`);
+            if (dorfmatratzeDied) {
+                lines.push(`Die Dorfmatratze schlief bei ${vname} und ist mitgestorben.`);
+            }
         }
     } else {
         lines.push(`Die Werwölfe haben heute Nacht niemanden angegriffen.`);

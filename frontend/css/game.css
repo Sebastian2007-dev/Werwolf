@@ -278,8 +278,11 @@ body::before {
     transition: all var(--transition);
 }
 
-.witch-btn--heal:not([hidden])   { border-color: rgba(80,180,100,0.4); color: #60c070; }
-.witch-btn--poison:not([hidden]) { border-color: rgba(224,85,85,0.4); color: #e08080; }
+.witch-btn--heal:not([hidden])    { border-color: rgba(80,180,100,0.4); color: #60c070; }
+.witch-btn--poison:not([hidden])  { border-color: rgba(224,85,85,0.4);  color: #e08080; }
+.witch-btn--confirm               { border-color: rgba(100,150,220,0.4); color: #90b0e0; }
+.witch-btn--heal.is-active        { border-color: rgba(80,180,100,0.9); background: rgba(80,180,100,0.2); }
+.witch-ui__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
 .witch-btn:hover { opacity: 0.8; }
 .witch-btn[hidden] { display: none; }
 

@@ -2,7 +2,13 @@
 
 ## [2026-06-16 12:30] README und LICENSE hinzugefügt
 - README.md vollständig überarbeitet: Projektbeschreibung, Features, Rollenübersicht, Tech Stack, Startanleitung, Projektstruktur, Lizenzhinweis
-- LICENSE erstellt: MIT-Lizenz für Quellcode, All Rights Reserved für Assets in `assets/` (Schutz der Rollenbilder)
+- LICENSE erstellt: Ursprünglich MIT-Lizenz für Quellcode und All Rights Reserved für Assets in `assets/`
+
+## [2026-06-16 17:00] Lizenz auf nicht-kommerzielle Nutzung geändert
+- LICENSE ersetzt: Proprietäre Nicht-Kommerziell-Lizenz für das gesamte Projekt
+- Nicht-kommerzielle Nutzung, Veränderung, Weitergabe und kostenloses Hosting erlaubt
+- Kommerzielle Nutzung, auch von veränderten Versionen, nur mit ausdrücklicher schriftlicher Genehmigung
+- README-Lizenzhinweis entsprechend aktualisiert
 
 ## [2026-06-16 16:30] Favicon eingebunden
 - `assets/favicon/favicon.png` in alle 6 HTML-Seiten als `<link rel="icon" type="image/png">` eingetragen (index, start, join, lobby, game, narrator)
