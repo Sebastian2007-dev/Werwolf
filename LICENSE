@@ -1,0 +1,49 @@
+================================================================================
+ WERWOLF – DIGITALER SPIELLEITER
+ Copyright (c) 2026 Sebastian2007-dev
+================================================================================
+
+
+## SOURCE CODE LICENSE (MIT)
+
+The source code of this project (all files except those in the `assets/`
+directory) is licensed under the MIT License:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+## ASSETS LICENSE (All Rights Reserved)
+
+All image files located in the `assets/` directory — including but not limited
+to role card artwork (*.jpeg, *.jpg, *.png, *.webp) — are the exclusive
+property of the copyright holder and are protected by copyright law.
+
+ALL RIGHTS RESERVED.
+
+You may NOT, without prior written permission from the copyright holder:
+- Copy, reproduce, or redistribute any asset file
+- Modify, adapt, or create derivative works based on any asset file
+- Use any asset file for commercial purposes
+- Include any asset file in another project, product, or publication
+
+The assets are made available solely for use within this project as intended.
+Any other use requires explicit written consent from:
+
+  Sebastian2007-dev
+  sebastianwendt07@gmail.com

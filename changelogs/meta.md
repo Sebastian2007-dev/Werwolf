@@ -1,5 +1,9 @@
 # Changelog — Projektdokumentation / Meta
 
+## [2026-06-16 12:30] README und LICENSE hinzugefügt
+- README.md vollständig überarbeitet: Projektbeschreibung, Features, Rollenübersicht, Tech Stack, Startanleitung, Projektstruktur, Lizenzhinweis
+- LICENSE erstellt: MIT-Lizenz für Quellcode, All Rights Reserved für Assets in `assets/` (Schutz der Rollenbilder)
+
 ## [2026-06-16 16:30] Favicon eingebunden
 - `assets/favicon/favicon.png` in alle 6 HTML-Seiten als `<link rel="icon" type="image/png">` eingetragen (index, start, join, lobby, game, narrator)
 
