@@ -30,12 +30,14 @@ const roomCode = params.get('code')   || sessionStorage.getItem('ww_roomCode');
 let currentPlayerId = params.get('player') || sessionStorage.getItem('ww_playerId');
 
 const PHASE_LABELS = {
-    'day-prep':       ['Vorbereitungsrunde', 'Tag',       'Alle Spieler dürfen reden. Starte die erste Nacht wenn bereit.'],
-    'night':          ['Nacht',              'Nacht',     ''],
-    'night-summary':  ['Nachtauswertung',    'Morgen',    'Die Nacht ist vorbei — sieh dir die Zusammenfassung an.'],
-    'day-accusation': ['Anklage-Phase',      'Tag',       'Spieler nominieren Angeklagte…'],
-    'day-voting':     ['Abstimmung',         'Tag',       'Spieler stimmen über die Angeklagten ab…'],
-    'day-result':     ['Tagesergebnis',      'Tag',       'Sieh dir das Ergebnis an.'],
+    'day-prep':           ['Vorbereitungsrunde', 'Tag',    'Alle Spieler dürfen reden. Starte die erste Nacht wenn bereit.'],
+    'night':              ['Nacht',              'Nacht',  ''],
+    'night-summary':      ['Nachtauswertung',    'Morgen', 'Die Nacht ist vorbei — sieh dir die Zusammenfassung an.'],
+    'hunter-night-shot':  ['Jäger schießt',      'Morgen', 'Der Jäger reißt jemanden mit in den Tod…'],
+    'hunter-day-shot':    ['Jäger schießt',      'Tag',    'Der Jäger reißt jemanden mit in den Tod…'],
+    'day-accusation':     ['Anklage-Phase',      'Tag',    'Spieler nominieren Angeklagte…'],
+    'day-voting':         ['Abstimmung',         'Tag',    'Spieler stimmen über die Angeklagten ab…'],
+    'day-result':         ['Tagesergebnis',      'Tag',    'Sieh dir das Ergebnis an.'],
 };
 
 // ── Socket ────────────────────────────────────────────────────────────────────
@@ -64,12 +66,12 @@ socket.on('resume-error', ({ message }) => {
 socket.on('narrator-update', (data) => {
     currentPhase = data.phase;
     updateHeader(data.phase, data.round);
-    updatePhaseCard(data.phase, data.activeEntry, data.waiting, data.progress);
+    updatePhaseCard(data.phase, data.activeEntry, data.waiting, data.progress, data.hunterName);
     if (data.players) renderPlayerGrid(data.players);
     if (data.events)  renderLog(data.events);
     updateButtons(data.phase, data.activeEntry, data.waiting);
     if (data.phase === 'night-summary' && data.summary) showSummary(data.summary);
-    if (data.phase === 'day-result') showDayResult(data.eliminated, data.skipped);
+    if (data.phase === 'day-result') showDayResult(data.eliminated, data.skipped, data.hunterShot);
 });
 
 socket.on('phase-changed', ({ phase, round }) => {
@@ -119,11 +121,11 @@ function updateHeader(phase, round) {
     roundDisplay.textContent = `Runde ${round ?? 1}`;
 }
 
-function updatePhaseCard(phase, entry, waiting, progress) {
+function updatePhaseCard(phase, entry, waiting, progress, hunterName) {
     const [eyebrow, title, hint] = PHASE_LABELS[phase] ?? ['—', '—', ''];
     const isNight = phase === 'night';
 
-    phaseCard.classList.toggle('is-night', isNight || phase === 'night-summary');
+    phaseCard.classList.toggle('is-night', isNight || phase === 'night-summary' || phase === 'hunter-night-shot');
     phaseEyebrow.textContent = eyebrow;
 
     if (isNight && entry) {
@@ -133,6 +135,11 @@ function updatePhaseCard(phase, entry, waiting, progress) {
             ? `Warte auf: ${entry.playerNames?.join(', ') ?? '—'}`
             : 'Aktion erhalten — drücke Weiter.';
         phaseStatus.className = 'phase-card__status' + (waiting ? '' : ' is-done');
+    } else if (phase === 'hunter-night-shot' || phase === 'hunter-day-shot') {
+        phaseTitle.textContent = title;
+        phaseHint.textContent  = hint;
+        phaseStatus.textContent = hunterName ? `${hunterName} muss jetzt schießen.` : 'Jäger schießt…';
+        phaseStatus.className = 'phase-card__status';
     } else if (phase === 'day-accusation' && progress) {
         phaseTitle.textContent = title;
         phaseHint.textContent  = hint;
@@ -185,7 +192,7 @@ function updateButtons(phase, entry, waiting) {
         skipBtn.hidden = !waiting;
         nextBtn.textContent = 'Weiter →';
         nextBtn.hidden = false;
-    } else if (phase === 'night-summary' || phase === 'day-accusation' || phase === 'day-voting' || phase === 'day-result' || phase === 'game-over') {
+    } else if (phase === 'night-summary' || phase === 'day-accusation' || phase === 'day-voting' || phase === 'day-result' || phase === 'game-over' || phase === 'hunter-night-shot' || phase === 'hunter-day-shot') {
         skipBtn.hidden = true;
         nextBtn.hidden = true;
     } else {
@@ -257,23 +264,30 @@ dayResultModal.addEventListener('click', (e) => {
     if (e.target === dayResultModal) dayResultModal.close();
 });
 
-function showDayResult(eliminated, skipped) {
+function showDayResult(eliminated, skipped, hunterShot) {
     dayResultBody.innerHTML = '';
-    let text, cls;
     if (skipped) {
-        text = 'Das Dorf überspringt die Abstimmung — niemand wird eliminiert.';
-        cls = '';
+        const p = document.createElement('p');
+        p.className = 'summary-line';
+        p.textContent = 'Das Dorf überspringt die Abstimmung — niemand wird eliminiert.';
+        dayResultBody.appendChild(p);
     } else if (eliminated) {
-        text = `${h(eliminated.name)} (${h(eliminated.roleName)}) wurde vom Dorf eliminiert.`;
-        cls = 'is-death';
+        const p = document.createElement('p');
+        p.className = 'summary-line is-death';
+        p.innerHTML = `${h(eliminated.name)} (${h(eliminated.roleName)}) wurde vom Dorf eliminiert.`;
+        dayResultBody.appendChild(p);
     } else {
-        text = 'Unentschieden — niemand wird eliminiert.';
-        cls = '';
+        const p = document.createElement('p');
+        p.className = 'summary-line';
+        p.textContent = 'Unentschieden — niemand wird eliminiert.';
+        dayResultBody.appendChild(p);
     }
-    const p = document.createElement('p');
-    p.className = `summary-line ${cls}`;
-    p.innerHTML = text;
-    dayResultBody.appendChild(p);
+    if (hunterShot) {
+        const p = document.createElement('p');
+        p.className = 'summary-line is-death';
+        p.innerHTML = `Jäger erschoss ${h(hunterShot.name)} (${h(hunterShot.roleName)}).`;
+        dayResultBody.appendChild(p);
+    }
     dayResultModal.showModal();
 }
 

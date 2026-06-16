@@ -106,6 +106,34 @@
         <div class="morning-grid" id="morning-grid"></div>
     </div>
 
+    <!-- Wildes Kind overlay: shown when its idol dies and it becomes a Werwolf -->
+    <div class="wildeskind-overlay" id="wildeskind-overlay" hidden>
+        <p class="wildeskind-overlay__eyebrow">Dein Idol ist gestorben</p>
+        <p class="wildeskind-overlay__idol" id="wildeskind-idol-name"></p>
+        <p class="wildeskind-overlay__reveal">Du bist jetzt ein Werwolf.</p>
+        <p class="wildeskind-overlay__hint">Schlie&szlig;e dich ab sofort den Werwölfen an.</p>
+        <button class="night-confirm" id="wildeskind-confirm">Verstanden &#10003;</button>
+    </div>
+
+    <!-- Ergebene Magd overlay: shown when her Herr dies and she takes his role -->
+    <div class="magd-overlay" id="magd-overlay" hidden>
+        <p class="magd-overlay__eyebrow">Dein Herr ist gestorben</p>
+        <p class="magd-overlay__herr" id="magd-herr-name"></p>
+        <p class="magd-overlay__sub">Du &uuml;bernimmst seine Rolle:</p>
+        <img class="magd-overlay__img" id="magd-role-img" src="" alt="">
+        <p class="magd-overlay__role-name" id="magd-role-name"></p>
+        <p class="magd-overlay__faction" id="magd-faction"></p>
+        <button class="night-confirm" id="magd-confirm">Verstanden &#10003;</button>
+    </div>
+
+    <!-- Hunter overlay: shown to Jäger when they must shoot -->
+    <div class="hunter-overlay" id="hunter-overlay" hidden>
+        <p class="hunter-overlay__title">Wen nimmst du mit in den Tod?</p>
+        <p class="hunter-overlay__hint">Du musst jemanden w&auml;hlen &mdash; kein &Uuml;berspringen.</p>
+        <div class="target-list" id="hunter-target-list"></div>
+        <button class="night-confirm" id="hunter-confirm" hidden>Erschie&szlig;en &#10003;</button>
+    </div>
+
     <!-- Night overlay: shown during night phase -->
     <div class="night-overlay" id="night-overlay" hidden>
 

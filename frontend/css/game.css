@@ -639,3 +639,143 @@ body::before {
     color: #e07070;
     font-weight: 600;
 }
+
+/* === Wildes Kind transform overlay === */
+.wildeskind-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 8, 4, 0.98);
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem 1.5rem;
+}
+
+.wildeskind-overlay[hidden] { display: none; }
+
+.wildeskind-overlay__eyebrow {
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.wildeskind-overlay__idol {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    color: var(--accent);
+    margin: 0;
+}
+
+.wildeskind-overlay__reveal {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    color: #e07070;
+    margin: 0.5rem 0 0;
+}
+
+.wildeskind-overlay__hint {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem;
+}
+
+/* === Ergebene Magd transform overlay === */
+.magd-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 8, 3, 0.98);
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem 1.5rem;
+}
+
+.magd-overlay[hidden] { display: none; }
+
+.magd-overlay__eyebrow {
+    font-size: 0.8rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.magd-overlay__herr {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    color: var(--accent);
+    margin: 0;
+}
+
+.magd-overlay__sub {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin: 0.5rem 0 0;
+}
+
+.magd-overlay__img {
+    width: 110px;
+    height: 154px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 2px solid var(--accent);
+    margin-top: 0.25rem;
+}
+
+.magd-overlay__role-name {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    color: var(--text);
+    margin: 0;
+}
+
+.magd-overlay__faction {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem;
+}
+
+/* === Hunter overlay (Jäger shoot UI) === */
+.hunter-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 4, 4, 0.98);
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: 2rem 1.5rem;
+}
+
+.hunter-overlay[hidden] { display: none; }
+
+.hunter-overlay__title {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #e07070;
+    text-align: center;
+    margin: 0;
+}
+
+.hunter-overlay__hint {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    text-align: center;
+    margin: 0;
+}
+
+.morning-overlay__deaths .morning-deaths__hunter {
+    color: #e07070;
+    font-style: italic;
+}

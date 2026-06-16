@@ -1,5 +1,30 @@
 # Changelog – Raum-Logik
 
+## [2026-06-17 00:10] Wildes Kind implementiert
+- **server.js**: `wildesKind_idol` + `wildesKind_isWolf` im Spielzustand; `processNightAction` speichert Idol; `tryWildesKindTransform(code, room, deadId)` — wenn Idol stirbt: `wildesKind_isWolf = true`, `wildeskind-transform` an Spieler gesendet; aufgerufen in `startDay`, `endDay`, `hunter-shot`; `isWolf(room, id)` — zentraler Wolf-Check (WOLF_IDS + transformiertes Wildes Kind); `checkWinCondition` und `advanceNight` (kill/kill-wolf Target-Filter) nutzen `isWolf`; `startNight` fügt transformiertes Wildes Kind der Werwolf-Nachtrunde hinzu
+- **game.js**: `wildeskind-transform`-Event — zeigt Overlay "Dein Idol ist gestorben — du bist jetzt ein Werwolf", aktualisiert Fraktions-Label auf der Karte
+- **game.html**: `#wildeskind-overlay`
+- **game.css**: `.wildeskind-overlay` (z-index 80, düsterer Grün-Ton)
+
+## [2026-06-16 23:58] Ergebene Magd: Rollen-Reset bei Übernahme
+- **server.js** `tryMagdTransform`: Wenn die Magd die Hexe übernimmt, werden `hexeUsedHeal` und `hexeUsedPoison` zurückgesetzt — sie hat beide Tränke frisch, unabhängig davon was die ursprüngliche Hexe verbraucht hat. (Alter, Glöckner, Gendarm: Reset folgt wenn diese Rollen implementiert werden.)
+
+## [2026-06-16 23:55] Ergebene Magd implementiert
+- **server.js**: NIGHT_ORDER — neue erste Nacht-Karte "Ergebene Magd" (actionType: select-one); `magd_herr` im Spielzustand; `tryMagdTransform(code, room, deadId)` — wenn der Herr stirbt, übernimmt die lebende Magd automatisch seine Rolle, emittiert `magd-transform` an sie; aufgerufen in `startDay` (Nacht-Tote), `endDay` (Tag-Eliminierung, vor Gewinncheck), `hunter-shot`-Handler (Schuss-Opfer); `processNightAction` speichert `g.magd_herr`; `replacePlayerSocket` aktualisiert `g.magd_herr` bei Reconnect
+- **game.js**: `currentCardId` (veränderbar, für Rollen-Transformation); `openCardModal` nutzt `currentCardId` statt const `cardId`; `magd-transform`-Event — zeigt Overlay mit Herren-Name + neuer Rollenkarte, nach Bestätigung: Karte auf Hauptseite in-place aktualisiert
+- **game.html**: `#magd-overlay` mit Herren-Name, Rollenbild, Fraktionsanzeige, Bestätigungs-Button
+- **game.css**: `.magd-overlay` (z-index 80, goldener Akzent-Stil)
+
+## [2026-06-16 23:30] Jäger-Rolle implementiert
+- **server.js**: `findPlayerByRole(room, roleId)` — sucht Socket-ID per Rollenzuweisung
+- **server.js**: `phase-advance` (night-summary) — prüft ob Jäger in den Nacht-Toten ist; wenn ja: `morning-partial-reveal` (nur Jäger-Karte), Phase → `hunter-night-shot`, `hunter-shoot` an Jäger mit möglichen Zielen
+- **server.js**: `hunter-shot`-Handler — Jäger sendet Ziel; Nacht: `morning-full-reveal` + 2,5s → `startDay`; Tag: Gewinncheck, dann `day-result` mit `hunterShot`-Info
+- **server.js**: `endDay` — wenn Jäger tagsüber eliminiert: Phase → `hunter-day-shot`, `hunter-shoot` an Jäger mit noch lebenden Spielern, alle sehen "Jäger schießt"-Meldung
+- **narrator.js**: `PHASE_LABELS` um `hunter-night-shot` / `hunter-day-shot` erweitert; `updatePhaseCard` zeigt Jäger-Name + "muss jetzt schießen"; `updateButtons` versteckt Weiter-Taste während Jäger schießt; `showDayResult` zeigt optionalen `hunterShot`-Eintrag
+- **game.js**: `morning-partial-reveal`-Event — dreht Jäger-Karte um, zeigt dramatischen Text; `morning-full-reveal` — dreht restliche Karten + Schuss-Opfer; `hunter-shoot`-Event — öffnet Hunter-Overlay für Jäger; `phase-changed hunter-day-shot` — zeigt Wartemeldung im Tages-Panel; `showDayWaitResult` zeigt Schuss-Opfer wenn vorhanden
+- **game.html**: `#hunter-overlay` mit Ziel-Liste und "Erschießen"-Button
+- **game.css**: `.hunter-overlay` (z-index 80, über Morgen-Overlay), `.morning-deaths__hunter` für dramatischen Jäger-Text
+
 ## [2026-06-16 22:15] Spielende: "Neue Karten" leitet zurück in die Lobby (selbe Spieler)
 - **server.js**: `reset-to-lobby`-Event setzt Raum auf Lobby-Zustand zurück (Phase, Spieler-Ready, Karten-Anfragen); sendet jedem Spieler `back-to-lobby` mit Name, isHost, RaumCode; `rejoin-lobby`-Event reconnectet Spieler mit aktueller Socket-ID in bestehenden Raum
 - **lobby.js**: `rejoin`-URL-Param erkannt → emittiert `rejoin-lobby` statt `create-room`/`join-room`; Guard für Doppel-Join funktioniert weiterhin

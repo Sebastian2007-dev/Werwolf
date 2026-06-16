@@ -18,6 +18,7 @@ const WOLF_IDS = new Set(['Werwolf_blau', 'Werwolf_gelb', 'Werwolf_gruen', 'Werw
 
 // Night call order – server iterates this list and skips roles not in the game
 const NIGHT_ORDER = [
+    { group: 'Ergebene Magd',   roleIds: ['ErgebeneMagd'],                                        firstNightOnly: true,   actionType: 'select-one',    hint: 'Wähle deinen Herren aus. Du weißt nicht, welche Rolle er hat.' },
     { group: 'Amor',            roleIds: ['Amor'],                                              firstNightOnly: true,   actionType: 'select-two',    hint: 'Wähle 2 Spieler als Liebespaar aus.' },
     { group: 'Dieb',            roleIds: ['Dieb'],                                              firstNightOnly: true,   actionType: 'select-one',    hint: 'Du kannst eine alternative Rolle übernehmen.' },
     { group: 'Wildes Kind',     roleIds: ['WildesKind'],                                        firstNightOnly: true,   actionType: 'select-one',    hint: 'Wähle dein Idol aus.' },
@@ -107,6 +108,8 @@ function replacePlayerSocket(room, oldId, newId) {
         if (g.hexeHealTarget === oldId) g.hexeHealTarget = newId;
         if (g.hexePoisonTarget === oldId) g.hexePoisonTarget = newId;
         if (g.dorfmatraze_sleep === oldId) g.dorfmatraze_sleep = newId;
+        if (g.magd_herr      === oldId) g.magd_herr      = newId;
+        if (g.wildesKind_idol === oldId) g.wildesKind_idol = newId;
         replaceIdInArray(g.lovers, oldId, newId);
 
         g.nightQueue?.forEach(entry => replaceIdInArray(entry.playerIds, oldId, newId));
@@ -302,6 +305,51 @@ function narratorPush(game, payload) {
     if (game.narratorId) io.to(game.narratorId).emit('narrator-update', payload);
 }
 
+function findPlayerByRole(room, roleId) {
+    return Object.entries(room.assignments ?? {}).find(([, rid]) => rid === roleId)?.[0] ?? null;
+}
+
+function tryMagdTransform(code, room, deadId) {
+    const g = room.game;
+    if (!g.magd_herr || g.magd_herr !== deadId) return;
+
+    const magdId = findPlayerByRole(room, 'ErgebeneMagd');
+    if (!magdId || !g.alive.has(magdId)) return;
+
+    const newRoleId   = room.assignments[deadId];
+    const newRoleName = ROLE_NAMES[newRoleId] ?? newRoleId;
+    const herrName    = playerName(room, deadId);
+
+    room.assignments[magdId] = newRoleId;
+    g.magd_herr = null;
+
+    // Reset role-specific state so the Magd starts with full fresh abilities
+    if (newRoleId === 'Hexe') {
+        g.hexeUsedHeal   = false;
+        g.hexeUsedPoison = false;
+    }
+    // (Alter, Glöckner, Gendarm: reset when those roles are implemented)
+
+    addEvent(g, `Die Ergebene Magd übernimmt die Rolle von ${herrName}: ${newRoleName}.`);
+    io.to(magdId).emit('magd-transform', { herrName, roleId: newRoleId, roleName: newRoleName });
+}
+
+function tryWildesKindTransform(code, room, deadId) {
+    const g = room.game;
+    if (!g.wildesKind_idol || g.wildesKind_idol !== deadId) return;
+    if (g.wildesKind_isWolf) return;
+
+    const wkId = findPlayerByRole(room, 'WildesKind');
+    if (!wkId || !g.alive.has(wkId)) return;
+
+    g.wildesKind_isWolf = true;
+    g.wildesKind_idol   = null;
+
+    const idolName = playerName(room, deadId);
+    addEvent(g, `Das Wilde Kind mutiert zum Werwolf — Idol ${idolName} ist gestorben.`);
+    io.to(wkId).emit('wildeskind-transform', { idolName });
+}
+
 function buildNightQueue(assignments, alive, round) {
     const queue = [];
     for (const tpl of NIGHT_ORDER) {
@@ -329,6 +377,15 @@ function startNight(code, room) {
     const g = room.game;
     g.phase       = 'night';
     g.nightQueue  = buildNightQueue(room.assignments, g.alive, g.round);
+
+    // Transformed WildesKind joins the wolf night turn
+    if (g.wildesKind_isWolf) {
+        const wkId = findPlayerByRole(room, 'WildesKind');
+        if (wkId && g.alive.has(wkId)) {
+            const wolfEntry = g.nightQueue.find(e => e.group === 'Werwölfe');
+            if (wolfEntry) wolfEntry.playerIds.push(wkId);
+        }
+    }
     g.nightIdx    = -1;
     g.nightVictim        = null;
     g.hexeHealTarget     = null;
@@ -363,9 +420,9 @@ function advanceNight(code, room) {
     // Notify active role players
     entry.playerIds.forEach(pid => {
         const myTargets = entry.actionType === 'kill-wolf'
-            ? targets.filter(t => WOLF_IDS.has(room.assignments[t.id]))
+            ? targets.filter(t => isWolf(room, t.id))
             : entry.actionType === 'kill'
-                ? targets.filter(t => !WOLF_IDS.has(room.assignments[t.id]))
+                ? targets.filter(t => !isWolf(room, t.id))
                 : targets.filter(t => t.id !== pid);
 
         const extra = {};
@@ -485,6 +542,20 @@ function processNightAction(code, room, entry, actorId, payload) {
             const tname = playerName(room, payload.targetId);
             addEvent(g, `Dorfmatratze schläft heute bei ${tname}.`);
             g.nightLog.push(`Dorfmatratze → ${tname}`);
+        }
+
+    } else if (entry.group === 'Ergebene Magd') {
+        if (payload.targetId) {
+            g.magd_herr = payload.targetId;
+            addEvent(g, `Ergebene Magd hat ihren Herren ausgewählt.`);
+            g.nightLog.push(`Ergebene Magd → ${playerName(room, payload.targetId)}`);
+        }
+
+    } else if (entry.group === 'Wildes Kind') {
+        if (payload.targetId) {
+            g.wildesKind_idol = payload.targetId;
+            addEvent(g, `Das Wilde Kind hat sein Idol ausgewählt.`);
+            g.nightLog.push(`Wildes Kind → ${playerName(room, payload.targetId)} (Idol, geheim)`);
         }
 
     } else if (entry.group === 'Amor') {
@@ -619,11 +690,16 @@ function endNight(code, room) {
     });
 }
 
+function isWolf(room, id) {
+    const rid = room.assignments[id];
+    return WOLF_IDS.has(rid) || (rid === 'WildesKind' && room.game.wildesKind_isWolf);
+}
+
 function checkWinCondition(room) {
     const g = room.game;
     const aliveIds  = [...g.alive];
-    const wolves    = aliveIds.filter(id => WOLF_IDS.has(room.assignments[id]));
-    const nonWolves = aliveIds.filter(id => !WOLF_IDS.has(room.assignments[id]));
+    const wolves    = aliveIds.filter(id => isWolf(room, id));
+    const nonWolves = aliveIds.filter(id => !isWolf(room, id));
 
     // Lovers: both alive, last two players standing
     if (g.lovers) {
@@ -653,6 +729,8 @@ function startDay(code, room) {
     // Apply deaths
     for (const pid of g.pendingDeaths) {
         g.alive.delete(pid);
+        tryMagdTransform(code, room, pid);
+        tryWildesKindTransform(code, room, pid);
     }
     g.pendingDeaths = new Set();
     g.round++;
@@ -749,7 +827,11 @@ function processDayVotes(code, room) {
 function endDay(code, room, eliminatedId, skipped) {
     const g = room.game;
 
-    if (eliminatedId) g.alive.delete(eliminatedId);
+    if (eliminatedId) {
+        g.alive.delete(eliminatedId);
+        tryMagdTransform(code, room, eliminatedId);
+        tryWildesKindTransform(code, room, eliminatedId);
+    }
 
     const win = checkWinCondition(room);
     if (win) {
@@ -757,6 +839,27 @@ function endDay(code, room, eliminatedId, skipped) {
         addEvent(g, win.message);
         io.to(code).emit('game-over', { winner: win.winner, message: win.message });
         narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
+        return;
+    }
+
+    // Jäger reißt jemanden mit in den Tod (day death)
+    if (eliminatedId && room.assignments[eliminatedId] === 'Jaeger') {
+        addEvent(g, `${playerName(room, eliminatedId)} (Jäger) reißt jemanden mit in den Tod.`);
+        g.phase = 'hunter-day-shot';
+        const jaegerInfo = {
+            id: eliminatedId,
+            name: playerName(room, eliminatedId),
+            roleId: 'Jaeger',
+            roleName: 'Jäger',
+        };
+        const shootTargets = [...g.alive].map(id => ({ id, name: playerName(room, id) }));
+        io.to(eliminatedId).emit('hunter-shoot', { targets: shootTargets });
+        io.to(code).emit('phase-changed', { phase: 'hunter-day-shot', round: g.round, hunterName: playerName(room, eliminatedId) });
+        narratorPush(g, {
+            phase: 'hunter-day-shot', round: g.round,
+            eliminated: jaegerInfo,
+            players: playerStatusList(room, g), events: g.events,
+        });
         return;
     }
 
@@ -915,6 +1018,9 @@ io.on('connection', (socket) => {
             dayNominations: {},
             dayAccused:     [],
             dayVotes:       {},
+            magd_herr:        null,
+            wildesKind_idol:  null,
+            wildesKind_isWolf: false,
         };
 
         addEvent(room.game, 'Spiel gestartet.');
@@ -972,6 +1078,9 @@ io.on('connection', (socket) => {
             dayNominations: {},
             dayAccused:     [],
             dayVotes:       {},
+            magd_herr:        null,
+            wildesKind_idol:  null,
+            wildesKind_isWolf: false,
         };
         addEvent(room.game, 'Spiel neugestartet.');
 
@@ -1055,8 +1164,28 @@ io.on('connection', (socket) => {
             advanceNight(code, room);
         } else if (g.phase === 'night-summary') {
             const deaths = g.nightSummary?.deaths ?? [];
-            io.to(code).emit('morning-reveal', { deaths });
-            setTimeout(() => startDay(code, room), 2500);
+            const jaegerId = findPlayerByRole(room, 'Jaeger');
+            const jaegerDied = jaegerId && deaths.some(d => d.id === jaegerId);
+
+            if (jaegerDied) {
+                const hunterDeath = deaths.find(d => d.id === jaegerId);
+                io.to(code).emit('morning-partial-reveal', { hunterDeath });
+                g.phase = 'hunter-night-shot';
+                const deadIds = new Set(deaths.map(d => d.id));
+                const shootTargets = [...g.alive]
+                    .filter(id => id !== jaegerId && !deadIds.has(id))
+                    .map(id => ({ id, name: playerName(room, id) }));
+                io.to(jaegerId).emit('hunter-shoot', { targets: shootTargets });
+                addEvent(g, `${playerName(room, jaegerId)} (Jäger) reißt jemanden mit in den Tod.`);
+                narratorPush(g, {
+                    phase: 'hunter-night-shot', round: g.round,
+                    hunterName: playerName(room, jaegerId),
+                    events: g.events, players: playerStatusList(room, g),
+                });
+            } else {
+                io.to(code).emit('morning-reveal', { deaths });
+                setTimeout(() => startDay(code, room), 2500);
+            }
         } else if (g.phase === 'day-result') {
             startNight(code, room);
         }
@@ -1117,6 +1246,64 @@ io.on('connection', (socket) => {
         });
 
         if (totalVoted >= g.alive.size) processDayVotes(code, room);
+    });
+
+    // ─ Hunter shot (Jäger) ───────────────────────────────────────────────────
+
+    socket.on('hunter-shot', ({ targetId }) => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { code, room } = ctx;
+        const g = room.game;
+        if (!g) return;
+
+        const jaegerId = findPlayerByRole(room, 'Jaeger');
+        if (jaegerId !== socket.id) return;
+        if (g.phase !== 'hunter-night-shot' && g.phase !== 'hunter-day-shot') return;
+        if (!g.alive.has(targetId)) return;
+
+        g.alive.delete(targetId);
+        tryMagdTransform(code, room, targetId);
+        tryWildesKindTransform(code, room, targetId);
+        const shotInfo = {
+            id:       targetId,
+            name:     playerName(room, targetId),
+            roleId:   room.assignments[targetId],
+            roleName: roleName(room.assignments, targetId),
+        };
+        addEvent(g, `${playerName(room, jaegerId)} (Jäger) erschoss ${shotInfo.name}.`);
+
+        if (g.phase === 'hunter-night-shot') {
+            const remainingDeaths = (g.nightSummary?.deaths ?? []).filter(d => d.id !== jaegerId);
+            io.to(code).emit('morning-full-reveal', { deaths: remainingDeaths, hunterShot: shotInfo });
+            setTimeout(() => startDay(code, room), 2500);
+        } else {
+            const win = checkWinCondition(room);
+            if (win) {
+                g.phase = 'game-over';
+                addEvent(g, win.message);
+                io.to(code).emit('game-over', { winner: win.winner, message: win.message });
+                narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
+                return;
+            }
+
+            g.phase = 'day-result';
+            const jaegerInfo = {
+                id:       jaegerId,
+                name:     playerName(room, jaegerId),
+                roleId:   'Jaeger',
+                roleName: 'Jäger',
+            };
+            io.to(code).emit('phase-changed', {
+                phase: 'day-result', round: g.round,
+                eliminated: jaegerInfo, skipped: false, hunterShot: shotInfo,
+            });
+            narratorPush(g, {
+                phase: 'day-result', round: g.round,
+                eliminated: jaegerInfo, hunterShot: shotInfo, skipped: false,
+                events: g.events, players: playerStatusList(room, g),
+            });
+        }
     });
 
     socket.on('phase-skip', () => {

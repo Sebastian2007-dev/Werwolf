@@ -5,6 +5,8 @@ const cardId   = params.get('card');
 const roomCode = params.get('code');
 // On reconnect we need the MOST RECENT socket ID known to the server, not the original lobby ID
 let currentPlayerId = params.get('player');
+// May change if player is Ergebene Magd and transforms
+let currentCardId = cardId;
 
 if (!cardId) { window.location.href = '/'; }
 
@@ -56,8 +58,9 @@ const infoBtn    = document.getElementById('info-btn');
 const closeBtn   = infoModal.querySelector('.modal__close');
 
 function openCardModal() {
-    infoTitle.textContent = role?.name ?? cardId;
-    infoDesc.textContent  = DESCRIPTIONS[cardId] ?? 'Keine Beschreibung verfügbar.';
+    const currentRole = ROLES.find(r => r.id === currentCardId);
+    infoTitle.textContent = currentRole?.name ?? currentCardId;
+    infoDesc.textContent  = DESCRIPTIONS[currentCardId] ?? 'Keine Beschreibung verfügbar.';
     infoModal.showModal();
 }
 
@@ -115,6 +118,20 @@ const morningOverlay  = document.getElementById('morning-overlay');
 const morningGrid     = document.getElementById('morning-grid');
 const morningDeaths   = document.getElementById('morning-deaths');
 document.getElementById('morning-card-peek').addEventListener('click', openCardModal);
+
+// ── Hunter overlay refs ───────────────────────────────────────────────────────
+const hunterOverlay    = document.getElementById('hunter-overlay');
+const hunterTargetList = document.getElementById('hunter-target-list');
+const hunterConfirm    = document.getElementById('hunter-confirm');
+let hunterSelectedId   = null;
+
+// ── Magd overlay refs ─────────────────────────────────────────────────────────
+const magdOverlay   = document.getElementById('magd-overlay');
+const magdHerrName  = document.getElementById('magd-herr-name');
+const magdRoleImg   = document.getElementById('magd-role-img');
+const magdRoleName  = document.getElementById('magd-role-name');
+const magdFaction   = document.getElementById('magd-faction');
+const magdConfirm   = document.getElementById('magd-confirm');
 
 const nightOverlay  = document.getElementById('night-overlay');
 const nightWait     = document.getElementById('night-wait');
@@ -381,15 +398,17 @@ socket.on('night-turn-done', () => {
 });
 
 // Phase transitions
-socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped }) => {
+socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped, hunterShot, hunterName }) => {
     if (phase === 'night') {
         dayPanel.hidden = true;
         morningOverlay.hidden = true;
+        hunterOverlay.hidden = true;
     }
     if (phase === 'day-prep') {
         hideOverlay();
         morningOverlay.hidden = true;
         dayPanel.hidden = true;
+        hunterOverlay.hidden = true;
     }
     if (phase === 'night-summary' && players) {
         hideOverlay();
@@ -403,8 +422,19 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminate
     if (phase === 'day-voting' && accused) {
         if (dayAlive) showDayVoting(accused);
     }
+    if (phase === 'hunter-day-shot') {
+        // All day-alive players see a wait message; the Jäger gets hunter-shoot separately
+        if (dayAlive) {
+            dayPanel.hidden = false;
+            dayAccusationUi.hidden = true;
+            dayVotingUi.hidden = true;
+            dayWaitUi.hidden = false;
+            dayWaitText.textContent = `Der Jäger schießt noch einmal ab…`;
+        }
+    }
     if (phase === 'day-result') {
-        if (dayAlive) showDayWaitResult(skipped, eliminated);
+        hunterOverlay.hidden = true;
+        if (dayAlive) showDayWaitResult(skipped, eliminated, hunterShot);
     }
 });
 
@@ -475,18 +505,85 @@ function showDayWait() {
     dayWaitText.textContent = 'Warte auf andere Spieler…';
 }
 
-function showDayWaitResult(skipped, eliminated) {
+function showDayWaitResult(skipped, eliminated, hunterShot) {
     dayAccusationUi.hidden = true;
     dayVotingUi.hidden = true;
     dayWaitUi.hidden = false;
+    let text;
     if (skipped) {
-        dayWaitText.textContent = 'Abstimmung übersprungen — niemand wird eliminiert.';
+        text = 'Abstimmung übersprungen — niemand wird eliminiert.';
     } else if (eliminated) {
-        dayWaitText.textContent = `${eliminated.name} wurde vom Dorf eliminiert.`;
+        text = `${eliminated.name} wurde vom Dorf eliminiert.`;
+        if (hunterShot) text += ` Jäger erschoss ${hunterShot.name}.`;
     } else {
-        dayWaitText.textContent = 'Unentschieden — niemand wird eliminiert.';
+        text = 'Unentschieden — niemand wird eliminiert.';
     }
+    dayWaitText.textContent = text;
 }
+
+// Jäger died at night: flip ONLY the Jäger's card first, then wait for hunter shot
+socket.on('morning-partial-reveal', ({ hunterDeath }) => {
+    const cardEl = morningGrid.querySelector(`[data-player-id="${CSS.escape(hunterDeath.id)}"]`);
+    if (cardEl) {
+        const backEl = cardEl.querySelector('.morning-card__back');
+        const roleData = ROLES.find(r => r.id === hunterDeath.roleId);
+        if (roleData && backEl.children.length === 0) {
+            const img = document.createElement('img');
+            img.src = `/assets/${roleData.image}`;
+            img.alt = roleData.name;
+            backEl.appendChild(img);
+        }
+        cardEl.classList.add('is-dead');
+        cardEl.querySelector('.morning-card__flip').classList.add('is-revealed');
+    }
+    morningDeaths.innerHTML = '<span class="morning-deaths__hunter">und der Jäger reißt mit in den Tod…</span>';
+    morningDeaths.classList.add('has-deaths');
+});
+
+// Jäger shot: flip remaining dead cards + hunter's target card
+socket.on('morning-full-reveal', ({ deaths, hunterShot }) => {
+    const flipCard = (d) => {
+        const cardEl = morningGrid.querySelector(`[data-player-id="${CSS.escape(d.id)}"]`);
+        if (!cardEl) return;
+        const backEl = cardEl.querySelector('.morning-card__back');
+        if (backEl.children.length === 0) {
+            const roleData = ROLES.find(r => r.id === d.roleId);
+            if (roleData) {
+                const img = document.createElement('img');
+                img.src = `/assets/${roleData.image}`;
+                img.alt = roleData.name;
+                backEl.appendChild(img);
+            }
+        }
+        cardEl.classList.add('is-dead');
+        cardEl.querySelector('.morning-card__flip').classList.add('is-revealed');
+    };
+    deaths.forEach(flipCard);
+    if (hunterShot) flipCard(hunterShot);
+
+    const names = [...morningGrid.querySelectorAll('.morning-card.is-dead')]
+        .map(el => el.querySelector('.morning-card__name')?.textContent ?? '');
+    morningDeaths.textContent = names.length > 0 ? names.join(', ') : 'Niemand';
+    morningDeaths.classList.toggle('has-deaths', names.length > 0);
+});
+
+// Server asks Jäger to pick their target
+socket.on('hunter-shoot', ({ targets }) => {
+    hunterSelectedId = null;
+    hunterConfirm.hidden = true;
+    buildTargetButtons(hunterTargetList, targets, (p, btn) => {
+        hunterTargetList.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
+        btn.classList.add('is-selected');
+        hunterSelectedId = p.id;
+        hunterConfirm.hidden = false;
+    });
+    hunterConfirm.onclick = () => {
+        if (!hunterSelectedId) return;
+        socket.emit('hunter-shot', { targetId: hunterSelectedId });
+        hunterOverlay.hidden = true;
+    };
+    hunterOverlay.hidden = false;
+});
 
 // Narrator advances: reveal dead cards
 socket.on('morning-reveal', ({ deaths }) => {
@@ -540,6 +637,45 @@ function showMorningScreen(players) {
     });
     morningOverlay.hidden = false;
 }
+
+// Wildes Kind: its idol died, it becomes a Werwolf
+socket.on('wildeskind-transform', ({ idolName }) => {
+    document.getElementById('wildeskind-idol-name').textContent = idolName;
+    document.getElementById('wildeskind-overlay').hidden = false;
+
+    document.getElementById('wildeskind-confirm').onclick = () => {
+        document.getElementById('wildeskind-overlay').hidden = true;
+        roleFaction.textContent = 'Werwolf';
+        roleFaction.hidden = false;
+    };
+});
+
+// Ergebene Magd: her Herr died, she takes his role
+socket.on('magd-transform', ({ herrName, roleId, roleName: newRoleName }) => {
+    const newRole = ROLES.find(r => r.id === roleId);
+    magdHerrName.textContent = herrName;
+    magdRoleImg.src          = newRole ? `/assets/${newRole.image}` : '';
+    magdRoleImg.alt          = newRoleName;
+    magdRoleName.textContent = newRoleName;
+    magdFaction.textContent  = newRole ? (FACTION_LABEL[newRole.faction] ?? newRole.faction) : '';
+    magdOverlay.hidden = false;
+
+    magdConfirm.onclick = () => {
+        magdOverlay.hidden = true;
+        currentCardId = roleId;
+        // Update main card display in-place
+        document.getElementById('role-img').src = newRole ? `/assets/${newRole.image}` : '';
+        document.getElementById('role-img').alt = newRoleName;
+        roleName.textContent    = newRoleName;
+        roleFaction.textContent = newRole ? (FACTION_LABEL[newRole.faction] ?? newRole.faction) : '';
+        roleName.hidden    = false;
+        roleFaction.hidden = false;
+        cardFlip.classList.remove('is-flipped');
+        flipBtn.classList.remove('is-flipped');
+        flipBtn.textContent = 'Karte umdrehen';
+        document.title = `${newRoleName} – Werwolf`;
+    };
+});
 
 // Amor: we are one of the lovers
 socket.on('you-are-lovers', ({ partnerName }) => {
