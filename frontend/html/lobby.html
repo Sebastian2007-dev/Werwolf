@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lobby – Werwolf</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
+    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/lobby.css">
+</head>
+<body>
+
+    <header class="lh">
+        <span class="lh__brand">Werwolf</span>
+        <div class="lh__room">
+            <span class="lh__label">Raum</span>
+            <span class="lh__code" id="room-code-display">——</span>
+            <button class="lh__copy" id="copy-btn" title="Code kopieren">&#10697;</button>
+        </div>
+    </header>
+
+    <main class="lobby">
+
+        <!-- Players -->
+        <aside class="lobby__col lobby__col--players">
+            <h2 class="lobby__col-title">Spieler <span id="player-count"></span></h2>
+            <ul class="player-list" id="player-list"></ul>
+        </aside>
+
+        <!-- Card selection -->
+        <section class="lobby__col lobby__col--cards">
+            <div class="cards-header">
+                <h2 class="lobby__col-title">Karten</h2>
+                <span class="card-counter" id="card-counter">0&nbsp;/&nbsp;0</span>
+            </div>
+            <p class="balance-warning" id="balance-warning" hidden></p>
+            <div id="card-grid"></div>
+        </section>
+
+        <!-- Chat -->
+        <aside class="lobby__col lobby__col--chat">
+            <h2 class="lobby__col-title">Chat</h2>
+            <div class="chat-log" id="chat-log"></div>
+            <form class="chat-form" id="chat-form">
+                <input class="chat-input" id="chat-input" type="text" placeholder="Nachricht&hellip;" maxlength="300" autocomplete="off">
+                <button class="chat-send" type="submit" aria-label="Senden">&#9658;</button>
+            </form>
+        </aside>
+
+    </main>
+
+    <footer class="lobby-footer">
+        <p class="lobby-footer__error" id="lobby-error" aria-live="polite"></p>
+        <div class="lobby-footer__actions">
+            <!-- shown for players only -->
+            <button class="lf-btn lf-btn--ready" id="ready-btn" hidden>Bereit</button>
+            <!-- shown for host only -->
+            <div class="narrator-toggle" id="narrator-toggle" hidden>
+                <span class="narrator-toggle__label">Spielleiter-Modus:</span>
+                <button class="narrator-toggle__btn is-active" id="narrator-btn-player" data-mode="player">Mitspieler</button>
+                <button class="narrator-toggle__btn" id="narrator-btn-narrator" data-mode="narrator">Erz&auml;hler</button>
+            </div>
+            <button class="lf-btn lf-btn--start" id="start-btn" hidden disabled>Spiel starten</button>
+        </div>
+    </footer>
+
+    <!-- Connecting / error overlay -->
+    <div class="overlay" id="overlay">
+        <div class="overlay__box">
+            <div class="overlay__spinner"></div>
+            <p class="overlay__msg" id="overlay-msg">Verbinde&hellip;</p>
+            <a class="overlay__back" href="/" hidden id="overlay-back">Zur Startseite</a>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/lobby.js" type="module"></script>
+</body>
+</html>

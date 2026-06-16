@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spiel starten – Werwolf</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
+    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/form.css">
+</head>
+<body>
+    <a href="/" class="back-link">&larr; Zur&uuml;ck</a>
+
+    <main class="form-page">
+        <div class="form-card">
+            <h1 class="form-card__title">Geschichte starten</h1>
+            <p class="form-card__subtitle">Du leitest das Spiel als Spielleiter und w&auml;hlst die Karten aus.</p>
+
+            <form id="start-form" class="form" novalidate>
+                <label class="form__label" for="host-name">Dein Name</label>
+                <input
+                    class="form__input"
+                    id="host-name"
+                    type="text"
+                    placeholder="Spielleitername"
+                    maxlength="20"
+                    autocomplete="off"
+                    required
+                >
+                <p class="form__error" id="name-error" aria-live="polite"></p>
+                <button class="form__submit" type="submit">Raum erstellen &rarr;</button>
+            </form>
+        </div>
+    </main>
+
+    <script src="/js/start.js" type="module"></script>
+</body>
+</html>

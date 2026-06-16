@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beitreten – Werwolf</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
+    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/form.css">
+</head>
+<body>
+    <a href="/" class="back-link">&larr; Zur&uuml;ck</a>
+
+    <main class="form-page">
+        <div class="form-card">
+            <h1 class="form-card__title">Geschichte beitreten</h1>
+            <p class="form-card__subtitle">Gib den Code ein, den dir der Spielleiter mitgeteilt hat.</p>
+
+            <form id="join-form" class="form" novalidate>
+                <label class="form__label" for="room-code">Raumcode</label>
+                <input
+                    class="form__input form__input--code"
+                    id="room-code"
+                    type="text"
+                    placeholder="ABCDEF"
+                    maxlength="6"
+                    autocomplete="off"
+                    spellcheck="false"
+                    inputmode="text"
+                    required
+                >
+                <label class="form__label" for="player-name">Dein Name</label>
+                <input
+                    class="form__input"
+                    id="player-name"
+                    type="text"
+                    placeholder="Spielername"
+                    maxlength="20"
+                    autocomplete="off"
+                    required
+                >
+                <p class="form__error" id="join-error" aria-live="polite"></p>
+                <button class="form__submit" type="submit">Beitreten &rarr;</button>
+            </form>
+        </div>
+    </main>
+
+    <script src="/js/join.js" type="module"></script>
+</body>
+</html>

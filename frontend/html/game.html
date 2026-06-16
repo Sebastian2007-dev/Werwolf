@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deine Rolle – Werwolf</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
+    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/game.css">
+</head>
+<body>
+
+    <header class="game-header">
+        <span class="game-header__brand">Werwolf</span>
+    </header>
+
+    <main class="game-main">
+
+        <!-- Card flip container -->
+        <div class="card-scene" id="card-scene">
+            <div class="card-flip" id="card-flip">
+                <div class="card-flip__front">
+                    <img class="card-flip__img" id="role-img" src="" alt="">
+                </div>
+                <div class="card-flip__back">
+                    <img class="card-flip__img" src="/assets/backside.jpeg" alt="Rückseite">
+                </div>
+            </div>
+        </div>
+
+        <!-- Role name + faction -->
+        <div class="card-info">
+            <h1 class="card-info__name" id="role-name">—</h1>
+            <p class="card-info__faction" id="role-faction"></p>
+        </div>
+
+        <!-- Actions -->
+        <div class="game-actions">
+            <button class="game-btn game-btn--flip" id="flip-btn">Karte umdrehen</button>
+            <button class="game-btn game-btn--info" id="info-btn" aria-label="Regelinfo">&#9432; Info</button>
+            <button class="game-btn game-btn--love" id="love-recall-btn" hidden>&#9829; Liebespaar</button>
+        </div>
+
+        <!-- Liebespaar-Info (hidden until Amor reveals it) -->
+        <div class="love-panel" id="love-panel" hidden>
+            <span class="love-panel__heart">&#9829;</span>
+            <p class="love-panel__text" id="love-panel-text"></p>
+        </div>
+
+    </main>
+
+    <!-- Game over screen -->
+    <div class="game-over-overlay" id="game-over-overlay" hidden>
+        <div class="game-over-box">
+            <p class="game-over-box__eyebrow" id="game-over-winner"></p>
+            <h2 class="game-over-box__title" id="game-over-message"></h2>
+        </div>
+    </div>
+
+    <!-- Info modal -->
+    <dialog class="modal" id="info-modal" aria-labelledby="info-modal-title">
+        <article class="modal__content">
+            <button class="modal__close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <h2 class="modal__title" id="info-modal-title"></h2>
+            <p id="info-modal-desc"></p>
+        </article>
+    </dialog>
+
+    <!-- Night overlay: shown during night phase -->
+    <div class="night-overlay" id="night-overlay" hidden>
+
+        <!-- Waiting state -->
+        <div class="night-wait" id="night-wait">
+            <div class="night-wait__moon">&#9790;</div>
+            <p class="night-wait__text">Schlie&szlig;e deine Augen&hellip;</p>
+            <p class="night-wait__sub" id="night-wait-sub"></p>
+        </div>
+
+        <!-- Action state -->
+        <div class="night-action" id="night-action" hidden>
+            <p class="night-action__group" id="na-group"></p>
+            <p class="night-action__hint" id="na-hint"></p>
+
+            <!-- Generic target list -->
+            <div class="target-list" id="target-list" hidden></div>
+
+            <!-- Witch special UI -->
+            <div class="witch-ui" id="witch-ui" hidden>
+                <p class="witch-ui__victim" id="witch-victim"></p>
+                <div class="witch-ui__choices">
+                    <button class="witch-btn witch-btn--heal" id="witch-heal" hidden>&#x2764; Heilen</button>
+                    <button class="witch-btn witch-btn--poison" id="witch-poison" hidden>&#x2620; Vergiften&hellip;</button>
+                    <button class="witch-btn witch-btn--pass" id="witch-pass">Nichts tun</button>
+                </div>
+                <div class="target-list" id="witch-poison-targets" hidden></div>
+            </div>
+
+            <!-- Seherin result -->
+            <div class="view-result" id="view-result" hidden>
+                <p class="view-result__text" id="view-result-text"></p>
+                <img class="view-result__img" id="view-result-img" src="" alt="">
+            </div>
+
+            <!-- Select-two helper -->
+            <p class="select-two-hint" id="select-two-hint" hidden>W&auml;hle 2 Spieler aus.</p>
+
+            <button class="night-confirm" id="night-confirm" hidden>Best&auml;tigen &#10003;</button>
+        </div>
+
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/game.js" type="module"></script>
+</body>
+</html>

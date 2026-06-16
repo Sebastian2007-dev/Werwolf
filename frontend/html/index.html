@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Werwolf</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+    <main class="home">
+        <div class="home__content">
+
+            <header class="home__header">
+                <p class="home__eyebrow">Das soziale Deduktionsspiel</p>
+                <h1 class="home__title">Werwolf</h1>
+            </header>
+
+            <div class="home__actions">
+                <a href="/html/start.html" class="action-card action-card--primary">
+                    <div class="action-card__body">
+                        <h2 class="action-card__title">Geschichte starten</h2>
+                        <p class="action-card__desc">Erstelle eine neue Runde als Spielleiter</p>
+                    </div>
+                    <span class="action-card__arrow" aria-hidden="true">&rarr;</span>
+                </a>
+
+                <a href="/html/join.html" class="action-card action-card--secondary">
+                    <div class="action-card__body">
+                        <h2 class="action-card__title">Geschichte beitreten</h2>
+                        <p class="action-card__desc">Tritt einer laufenden Runde mit einem Code bei</p>
+                    </div>
+                    <span class="action-card__arrow" aria-hidden="true">&rarr;</span>
+                </a>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="footer__inner">
+            <span class="footer__copy">&copy; 2026 Werwolf</span>
+            <nav class="footer__nav" aria-label="Rechtliches">
+                <button class="footer__link" data-modal="impressum">Impressum</button>
+                <button class="footer__link" data-modal="datenschutz">Datenschutz</button>
+                <button class="footer__link" data-modal="nutzung">Nutzungsbedingungen</button>
+            </nav>
+        </div>
+    </footer>
+
+    <!-- Modals -->
+    <dialog class="modal" id="modal-impressum" aria-labelledby="modal-impressum-title">
+        <article class="modal__content">
+            <button class="modal__close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <h2 class="modal__title" id="modal-impressum-title">Impressum</h2>
+            <p>Angaben gem&auml;&szlig; &sect;&nbsp;5 DDG</p>
+            <p>
+                <strong>Betreiber:</strong><br>
+                Sebastian Wendt<br>
+                Bochumer Stra&szlig;e 52<br>
+                99734 Nordhausen
+            </p>
+            <p>
+                <strong>Kontakt:</strong><br>
+                E-Mail: <a href="mailto:sebastianwendt07@gmail.com">sebastianwendt07@gmail.com</a>
+            </p>
+            <p>Dieses Angebot ist ein privates, nicht-kommerzielles Freizeitprojekt.</p>
+        </article>
+    </dialog>
+
+    <dialog class="modal" id="modal-datenschutz" aria-labelledby="modal-datenschutz-title">
+        <article class="modal__content">
+            <button class="modal__close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <h2 class="modal__title" id="modal-datenschutz-title">Datenschutzerkl&auml;rung</h2>
+            <h3>1. Verantwortlicher</h3>
+            <p>Sebastian Wendt &mdash; <a href="mailto:sebastianwendt07@gmail.com">sebastianwendt07@gmail.com</a></p>
+            <h3>2. Welche Daten werden verarbeitet?</h3>
+            <p>Spielerdaten (Nickname, Raum-ID) werden ausschlie&szlig;lich f&uuml;r die Dauer der Sitzung im Arbeitsspeicher des Servers gehalten und beim Schlie&szlig;en der Verbindung gel&ouml;scht. Es findet keine dauerhafte Speicherung oder Weitergabe an Dritte statt.</p>
+            <h3>3. Cookies</h3>
+            <p>Es werden keine Tracking- oder Werbecookies eingesetzt.</p>
+            <h3>4. Server-Logs</h3>
+            <p>Der Server protokolliert Verbindungen in anonymisierter Form (Zeitstempel, aufgerufene URL). Protokolldaten werden nach 7 Tagen automatisch gel&ouml;scht.</p>
+            <h3>5. Deine Rechte</h3>
+            <p>Du hast das Recht auf Auskunft, Berichtigung und L&ouml;schung deiner Daten (Art.&nbsp;15&ndash;17 DSGVO). Anfragen an: <a href="mailto:sebastianwendt07@gmail.com">sebastianwendt07@gmail.com</a></p>
+        </article>
+    </dialog>
+
+    <dialog class="modal" id="modal-nutzung" aria-labelledby="modal-nutzung-title">
+        <article class="modal__content">
+            <button class="modal__close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <h2 class="modal__title" id="modal-nutzung-title">Nutzungsbedingungen</h2>
+            <p>Dieses Spiel ist ein privates Freizeitprojekt und wird ohne Gew&auml;hr bereitgestellt.</p>
+            <ul>
+                <li>Der Dienst kann ohne Vorank&uuml;ndigung ge&auml;ndert oder eingestellt werden.</li>
+                <li>Die Nutzung erfolgt auf eigene Verantwortung.</li>
+                <li>Es werden keine Haftungsanspr&uuml;che f&uuml;r durch die Nutzung entstandene Sch&auml;den &uuml;bernommen.</li>
+            </ul>
+        </article>
+    </dialog>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

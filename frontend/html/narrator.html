@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Erzähler – Werwolf</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
+    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/narrator.css">
+</head>
+<body>
+
+    <header class="nh">
+        <span class="nh__brand">Werwolf</span>
+        <div class="nh__meta">
+            <span class="nh__badge" id="phase-badge">Vorbereitung</span>
+            <span class="nh__round" id="round-display">Runde 1</span>
+        </div>
+        <span class="nh__role">Erz&auml;hler</span>
+    </header>
+
+    <main class="narrator-main">
+
+        <!-- Left: current phase / active role -->
+        <section class="narrator-control">
+
+            <div class="phase-card" id="phase-card">
+                <p class="phase-card__eyebrow" id="phase-eyebrow">Vorbereitungsrunde</p>
+                <h2 class="phase-card__title" id="phase-title">Tag</h2>
+                <p class="phase-card__hint" id="phase-hint">
+                    Alle Spieler dürfen reden. Starte die erste Nacht wenn bereit.
+                </p>
+                <div class="phase-card__status" id="phase-status"></div>
+            </div>
+
+            <!-- Player status grid -->
+            <div class="player-grid-wrap">
+                <h3 class="section-label">Spieler</h3>
+                <div class="player-grid" id="player-grid"></div>
+            </div>
+
+            <!-- Narrator actions -->
+            <div class="narrator-actions">
+                <button class="na-btn na-btn--skip" id="skip-btn" hidden>&#9654;&#9654; &Uuml;berspringen</button>
+                <button class="na-btn na-btn--next" id="next-btn">Weiter &#8594;</button>
+            </div>
+
+        </section>
+
+        <!-- Right: event log -->
+        <aside class="narrator-log">
+            <h3 class="section-label">Ereignisprotokoll</h3>
+            <div class="log-entries" id="log-entries"></div>
+        </aside>
+
+    </main>
+
+    <!-- Night summary modal -->
+    <dialog class="modal" id="summary-modal" aria-labelledby="summary-title">
+        <article class="modal__content">
+            <h2 class="modal__title" id="summary-title">Nacht&shy;zusammenfassung</h2>
+            <div class="summary-body" id="summary-body"></div>
+            <button class="na-btn na-btn--next summary-advance" id="summary-advance">Tag beginnt &rarr;</button>
+        </article>
+    </dialog>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/narrator.js" type="module"></script>
+</body>
+</html>
