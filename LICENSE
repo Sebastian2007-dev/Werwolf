@@ -1,49 +1,68 @@
 ================================================================================
- WERWOLF – DIGITALER SPIELLEITER
+ WERWOLF - DIGITALER SPIELLEITER
  Copyright (c) 2026 Sebastian2007-dev
 ================================================================================
 
+## Proprietary Non-Commercial License
 
-## SOURCE CODE LICENSE (MIT)
+This project, including its source code, documentation, images, artwork, and all
+other included files, is copyrighted by Sebastian2007-dev.
 
-The source code of this project (all files except those in the `assets/`
-directory) is licensed under the MIT License:
+You are allowed to use, copy, modify, host, and share this project only for
+non-commercial purposes, subject to the conditions below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+## Permitted Non-Commercial Use
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You may, without paying a license fee:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+- Use the project privately or in a non-commercial community setting
+- Host the project for free, as long as access is not sold or monetized
+- Modify the source code and assets for non-commercial purposes
+- Share unchanged or modified copies for non-commercial purposes
+- Create non-commercial forks, adaptations, or derivative works
+
+Any copy, fork, modification, hosted version, or derivative work must keep this
+license notice and the copyright notice.
+
+## Commercial Use Is Not Allowed
+
+You may NOT use this project, or any modified version of it, for commercial
+purposes without prior written permission from the copyright holder.
+
+Commercial use includes, but is not limited to:
+
+- Selling the project, a modified version, or access to it
+- Using it in a paid product, paid service, subscription, or commercial platform
+- Hosting it with advertising, sponsorship, paywalls, paid accounts, or other
+  monetization
+- Using it to promote or support a business, company, paid event, or commercial
+  service
+- Including its source code, design, gameplay implementation, images, or assets
+  in another commercial project
+
+All commercial rights are reserved exclusively by the copyright holder.
+
+## Assets
+
+Images, artwork, role cards, and other files in the `assets/` directory may be
+used and modified only as part of non-commercial use of this project.
+
+You may not extract, sell, redistribute, or reuse the assets as a separate asset
+pack, standalone publication, or part of another commercial project without
+prior written permission.
+
+## No Warranty
+
+THE PROJECT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE PROJECT OR THE USE OR OTHER DEALINGS IN THE PROJECT.
 
+## Contact
 
-## ASSETS LICENSE (All Rights Reserved)
-
-All image files located in the `assets/` directory — including but not limited
-to role card artwork (*.jpeg, *.jpg, *.png, *.webp) — are the exclusive
-property of the copyright holder and are protected by copyright law.
-
-ALL RIGHTS RESERVED.
-
-You may NOT, without prior written permission from the copyright holder:
-- Copy, reproduce, or redistribute any asset file
-- Modify, adapt, or create derivative works based on any asset file
-- Use any asset file for commercial purposes
-- Include any asset file in another project, product, or publication
-
-The assets are made available solely for use within this project as intended.
-Any other use requires explicit written consent from:
+Commercial licensing or other permissions require explicit written consent from:
 
   Sebastian2007-dev
   sebastianwendt07@gmail.com

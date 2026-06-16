@@ -56,6 +56,8 @@ CodeGuide.md     # Code-Styleguide
 
 ## Lizenz
 
-Der **Quellcode** steht unter der [MIT License](LICENSE).  
-Die **Assets** (Bilder in `assets/`) sind urheberrechtlich geschützt – **All Rights Reserved**. Keine Weitergabe, Modifikation oder kommerzielle Nutzung ohne ausdrückliche Genehmigung.  
+Dieses Projekt steht unter einer **proprietären Nicht-Kommerziell-Lizenz**.
+
+Du darfst das Projekt nicht-kommerziell nutzen, verändern, weitergeben und kostenlos hosten.  
+Kommerzielle Nutzung, auch von veränderten Versionen, ist ohne ausdrückliche schriftliche Genehmigung nicht erlaubt.  
 Details siehe [LICENSE](LICENSE).
