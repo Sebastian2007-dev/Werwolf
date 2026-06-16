@@ -1,5 +1,82 @@
 # Changelog – Raum-Logik
 
+## [2026-06-16 22:15] Spielende: "Neue Karten" leitet zurück in die Lobby (selbe Spieler)
+- **server.js**: `reset-to-lobby`-Event setzt Raum auf Lobby-Zustand zurück (Phase, Spieler-Ready, Karten-Anfragen); sendet jedem Spieler `back-to-lobby` mit Name, isHost, RaumCode; `rejoin-lobby`-Event reconnectet Spieler mit aktueller Socket-ID in bestehenden Raum
+- **lobby.js**: `rejoin`-URL-Param erkannt → emittiert `rejoin-lobby` statt `create-room`/`join-room`; Guard für Doppel-Join funktioniert weiterhin
+- **narrator.js/game.js**: `back-to-lobby`-Event leitet alle zu `/html/lobby.html?rejoin=CODE&name=NAME` weiter; Host bekommt zusätzlich `host=1`
+- **narrator.html**: Button "Neue Karten →" (war "Neue Lobby →")
+
+## [2026-06-16 22:00] Spielende: Neustart- und Neue-Lobby-Optionen
+- **server.js**: `restart-game`-Event — neustart mit gleichen Karten (neu gemischt), selbe Spieler; `end-session`-Event — emittiert `session-ended` an alle und löscht den Raum
+- **narrator.html/js**: Nach Spielende zwei Buttons sichtbar: "Nochmal spielen" und "Neue Lobby →"; Bugfix: `updateButtons` zeigte "Nacht beginnt →" bei `game-over` (nun korrekt versteckt); `game-started`-Handler leitet Erzähler zur narrator.html weiter; `session-ended`-Handler leitet zur Startseite
+- **game.js**: `game-started`-Handler leitet Spieler zur game.html mit neuer Karte; `session-ended`-Handler leitet zur Startseite
+- **narrator.css**: `.game-over-actions` mit Einblend-Animation
+
+## [2026-06-16 21:30] Tagesrunde: Anklage + Abstimmung implementiert
+- **Lobby**: "Max. Anklagen"-Einstellung (Host only, Standard 3, 1–10) in Footer; `set-max-accusations`-Event
+- **server.js**: Neue Phasen `day-accusation` → `day-voting` → `day-result`; `startDay` ruft `startDayAccusation` auf; `day-vote`-Phase entfernt; neue Funktionen `startDayAccusation`, `processDayNominations`, `startDayVoting`, `processDayVotes`, `endDay`; neue Socket-Events `day-nominate`, `day-vote-cast`, `set-max-accusations`
+- **narrator.js/html**: PHASE_LABELS für neue Phasen; Anklage/Abstimmungs-Fortschritt in Phase-Karte; Tag-Ergebnis-Modal mit "Nächste Nacht →"
+- **game.js/html/css**: Tag-Panel (aus Boden hochfährt); Anklage-UI mit Spielerliste + Überspringen; Abstimmungs-UI mit Angeklagten-Liste + Bestätigen; Ergebnis-Text im Warte-Zustand; tote Spieler sehen kein Panel
+
+## [2026-06-16 21:00] Morgenbildschirm + Nacht-Zusammenfassung implementiert
+- `server.js` (`endNight`): sendet alle lebenden Spielernamen im `phase-changed night-summary`-Event
+- `server.js` (`phase-advance`): emittiert `morning-reveal` mit Todesliste, ruft `startDay` mit 2,5s Verzögerung auf
+- `narrator.js`: `narrator-update`-Handler öffnet nun das Zusammenfassungs-Modal wenn `phase === 'night-summary'` und `summary` vorhanden; totes `night-summary`-Handler entfernt
+- `game.html`: neues `#morning-overlay`-Div mit Kartengrid und Todestextzeile
+- `game.css`: Stile für `.morning-overlay`, `.morning-grid`, `.morning-card` (Flip-Animation, Name, Todesmarkierung)
+- `game.js`: `phase-changed night-summary` zeigt Morgenbildschirm mit allen Karten (verdeckt); `morning-reveal` deckt tote Karten auf und zeigt Rollenbild; `phase-changed day-vote` blendet Morgenbildschirm aus
+
+## [2026-06-16 20:20] Bugfix: "Wartet auf: X" verrät aktiven Spieler entfernt
+- `game.js`: `night-waiting`-Handler zeigt kein `waitingFor` mehr — nur noch "Schließe deine Augen…"
+- `server.js`: `waitingFor`-Feld aus dem `night-waiting`-Emit entfernt
+
+## [2026-06-16 20:15] Bugfix: Aktive Rolle sieht Warteschirm + Karten-Peek-Button
+
+### Bugfix: Aktive Rolle sieht "Schließe deine Augen" statt ihrer Aktion
+- **Ursache**: `night-waiting` wurde per `io.to(code).emit(...)` an ALLE Spieler gesendet, auch den aktiven — das hat die kurz zuvor gesendete `your-night-turn`-Aktion überschrieben
+- `backend/server.js`: `night-waiting`-Emit enthält jetzt zusätzlich `waitingFor` (Spielernamen als String) neben dem schon vorhandenen `activePlayers` (ID-Array)
+- `frontend/js/game.js`: `night-waiting`-Handler prüft `activePlayers.includes(socket.id)` — ist man selbst aktiv, wird das Event ignoriert
+
+### Feature: Karte während der Nacht ansehen
+- `game.html`: Button `#night-card-peek` (oben-rechts auf dem Nacht-Overlay) hinzugefügt
+- `game.js`: Button öffnet dasselbe Info-Modal wie der normale ℹ-Button (Rollenname + Beschreibung); gemeinsame `openCardModal()`-Funktion
+- `game.css`: `.night-card-peek` — halbtransparenter Button, positioniert absolute oben-rechts
+
+## [2026-06-16 19:45] Bugfix: Erzähler-Seite zeigt "Verbindung zum Raum fehlt"
+
+### Ursachen
+1. `lobby.js` `connect`-Handler rief bei Socket-Reconnects erneut `create-room` → neuer leerer Raum, original Raum verwaist
+2. Narrator-Check `socket.id === narratorId` schlägt fehl wenn Socket-ID zwischen Raumgründung und Spielstart wechselte → Erzähler landet auf `game.html` statt `narrator.html`
+3. Bei Reconnect auf `narrator.html`/`game.html` wurde die alte URL-`playerId` benutzt, die der Server nicht mehr kennt
+
+### Fixes
+- `lobby.js`: `lobbyJoined`-Flag verhindert doppeltes `create-room` / `join-room` bei Reconnect
+- `lobby.js`: Narrator-Erkennung auf `!assignments[pid]` (kein Karten-Assignment) statt `socket.id === narratorId` → robuster gegen ID-Wechsel
+- `lobby.js`: Schreibt `ww_roomCode` und `ww_playerId` in `sessionStorage` vor Redirect → Fallback falls URL-Params fehlen
+- `narrator.js`: Liest `roomCode`/`playerId` aus URL-Params **oder** `sessionStorage`
+- `narrator.js` + `game.js`: `currentPlayerId` wird nach `resume-ok` auf aktuelle `socket.id` aktualisiert → Reconnects nutzen immer die zuletzt bekannte ID
+
+## [2026-06-16 19:15] Werwölfe: Mehrheitsvote-System implementiert
+
+### Backend (backend/server.js)
+- Neue Hilfsfunktionen: `getVoteCounts`, `getMajorityTarget`, `broadcastWolfVotes`
+- `startNight`: `g.wolfVotes` und `g.wolfConfirms` pro Nacht initialisiert
+- `advanceNight`: Wolf-Zielliste filtert alle Werwölfe raus (nur Nicht-Wölfe wählbar)
+- `processNightAction` (kill): vollständig umgebaut:
+  - `{ vote: targetId }` → Stimme registriert, alle Confirms zurückgesetzt, sofortiger Broadcast
+  - `{ confirm: true }` → nur gültig wenn Mehrheitsziel existiert und Wolf dafür gestimmt hat; bei genug Confirms wird Opfer gesperrt
+  - Opfer gesperrt → `night-turn-done` an alle Wölfe, Erzähler-Update mit `done: true`
+  - Erzähler erhält bei jedem Vote-Update Zusammenfassung (`wolfVoteSummary`)
+- `night-action` Socket-Handler: `processNightAction` gibt `true/false` zurück; `night-turn-done` nur bei `true` (Wölfe steuern es selbst)
+
+### Frontend (frontend/js/game.js + game.html + game.css)
+- `kill`-Branch aus generischem `else` herausgelöst — eigener UI-Pfad für Werwölfe
+- Vote: Klick auf Ziel sendet `{ vote: targetId }`, selektiert den Button visuell
+- `wolf-vote-update`: aktualisiert Stimm-Badges (rote Kreis-Zahl pro Ziel), hebt eigene Wahl hervor, zeigt "Bestätigen"-Button sobald Mehrheit für eigenes Ziel, deaktiviert Button nach eigenem Confirm
+- `wolf-status`-Zeile zeigt `"X hat die Mehrheit — N/M bestätigt"` bzw. `"Noch keine Mehrheit"`
+- `game.html`: `#wolf-status` ergänzt
+- `game.css`: `.wolf-status`, `.vote-badge` ergänzt
+
 ## [2026-06-16 18:45] Hexe: Toggle-Confirm-Flow implementiert
 
 ### Frontend (frontend/js/game.js + game.html + game.css)
@@ -165,3 +242,12 @@ npm start       # Produktion
 npm run dev     # Entwicklung (Node.js >= 18.11 für --watch)
 ```
 Dann: http://localhost:3000/
+
+## [2026-06-16 19:45] Seitenwechsel-Reconnect fuer laufende Spiele repariert
+- `backend/server.js`: `resume-game` Socket-Event ergaenzt; Spieler- und Erzaehler-Socket-IDs werden nach dem Wechsel von Lobby zu Spiel-/Erzaehlerseite ersetzt
+- Disconnects werden 15 Sekunden verzoegert entfernt, damit normale Seitenwechsel den Raum nicht sofort zerstoeren
+- Aktueller Spielzustand wird nach dem Reconnect erneut an Erzaehler oder Spieler gesendet
+- `frontend/js/lobby.js`: Raumcode und bisherige Spieler-ID werden beim Wechsel auf `game.html`/`narrator.html` mitgegeben
+- `frontend/js/narrator.js` und `frontend/js/game.js`: Zielseiten melden sich mit `resume-game` beim Server zurueck
+- Root-`package.json` ergaenzt, damit `npm start` direkt im Projektordner das Backend startet
+- README-Startanleitung auf den Root-Startbefehl aktualisiert

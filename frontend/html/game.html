@@ -69,8 +69,48 @@
         </article>
     </dialog>
 
+    <!-- Day interaction panel: shown during day-accusation and day-voting -->
+    <div class="day-panel" id="day-panel" hidden>
+
+        <!-- Accusation UI -->
+        <div id="day-accusation-ui">
+            <p class="day-panel__eyebrow">Anklage-Phase</p>
+            <p class="day-panel__hint" id="day-accusation-hint">W&auml;hle jemanden aus oder &uuml;berspringe die Runde.</p>
+            <div class="target-list" id="day-target-list"></div>
+            <div class="day-panel__actions">
+                <button class="day-btn day-btn--confirm" id="day-accuse-btn" hidden>Anklagen &#10003;</button>
+                <button class="day-btn day-btn--skip" id="day-skip-btn">&Uuml;berspringen</button>
+            </div>
+        </div>
+
+        <!-- Voting UI -->
+        <div id="day-voting-ui" hidden>
+            <p class="day-panel__eyebrow">Abstimmung</p>
+            <p class="day-panel__hint">Wen verdächtigst du am meisten ein Werwolf zu sein?</p>
+            <div class="target-list" id="day-accused-list"></div>
+            <button class="day-btn day-btn--confirm" id="day-vote-btn" hidden>Abstimmen &#10003;</button>
+        </div>
+
+        <!-- Wait / result UI -->
+        <div id="day-wait-ui" hidden>
+            <p class="day-panel__wait-text" id="day-wait-text">Warte auf andere Spieler&hellip;</p>
+        </div>
+
+    </div>
+
+    <!-- Morning reveal overlay: shown during night-summary phase -->
+    <div class="morning-overlay" id="morning-overlay" hidden>
+        <button class="night-card-peek" id="morning-card-peek" title="Meine Karte anzeigen">&#9432; Meine Karte</button>
+        <h2 class="morning-overlay__title">Der Morgen graut und gestorben ist:</h2>
+        <p class="morning-overlay__deaths" id="morning-deaths">&hellip;</p>
+        <div class="morning-grid" id="morning-grid"></div>
+    </div>
+
     <!-- Night overlay: shown during night phase -->
     <div class="night-overlay" id="night-overlay" hidden>
+
+        <!-- Card peek button (always visible on overlay) -->
+        <button class="night-card-peek" id="night-card-peek" title="Meine Karte anzeigen">&#9432; Meine Karte</button>
 
         <!-- Waiting state -->
         <div class="night-wait" id="night-wait">
@@ -86,6 +126,9 @@
 
             <!-- Generic target list -->
             <div class="target-list" id="target-list" hidden></div>
+
+            <!-- Wolf vote status -->
+            <p class="wolf-status" id="wolf-status" hidden></p>
 
             <!-- Witch special UI -->
             <div class="witch-ui" id="witch-ui" hidden>

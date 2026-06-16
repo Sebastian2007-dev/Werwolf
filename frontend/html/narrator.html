@@ -48,6 +48,12 @@
                 <button class="na-btn na-btn--next" id="next-btn">Weiter &#8594;</button>
             </div>
 
+            <!-- Game-over actions (shown only after game ends) -->
+            <div class="game-over-actions" id="game-over-actions" hidden>
+                <button class="na-btn na-btn--next" id="restart-same-btn">&#8635; Nochmal spielen</button>
+                <button class="na-btn na-btn--skip" id="restart-new-btn">Neue Karten &rarr;</button>
+            </div>
+
         </section>
 
         <!-- Right: event log -->
@@ -64,6 +70,15 @@
             <h2 class="modal__title" id="summary-title">Nacht&shy;zusammenfassung</h2>
             <div class="summary-body" id="summary-body"></div>
             <button class="na-btn na-btn--next summary-advance" id="summary-advance">Tag beginnt &rarr;</button>
+        </article>
+    </dialog>
+
+    <!-- Day result modal -->
+    <dialog class="modal" id="day-result-modal" aria-labelledby="day-result-title">
+        <article class="modal__content">
+            <h2 class="modal__title" id="day-result-title">Tagesergebnis</h2>
+            <div class="summary-body" id="day-result-body"></div>
+            <button class="na-btn na-btn--next" id="day-result-advance">N&auml;chste Nacht &rarr;</button>
         </article>
     </dialog>
 

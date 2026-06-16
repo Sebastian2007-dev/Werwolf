@@ -1,12 +1,13 @@
 import { ROLES, DESCRIPTIONS } from '/js/roles.js';
 
 // ── URL params ────────────────────────────────────────────────────────────────
-const params   = new URLSearchParams(window.location.search);
-const isHost   = params.get('host') === '1';
-const myName   = params.get('name');
-const roomCode = params.get('code');
+const params      = new URLSearchParams(window.location.search);
+const isHost      = params.get('host') === '1';
+const myName      = params.get('name');
+const roomCode    = params.get('code');
+const rejoinCode  = params.get('rejoin');
 
-if (!myName || (!isHost && !roomCode)) {
+if (!myName || (!isHost && !roomCode && !rejoinCode)) {
     window.location.href = '/';
 }
 
@@ -25,12 +26,14 @@ const playerCount   = document.getElementById('player-count');
 const cardGrid      = document.getElementById('card-grid');
 const cardCounter   = document.getElementById('card-counter');
 const balanceWarn   = document.getElementById('balance-warning');
-const readyBtn          = document.getElementById('ready-btn');
-const startBtn          = document.getElementById('start-btn');
-const narratorToggle    = document.getElementById('narrator-toggle');
-const narratorBtnPlayer = document.getElementById('narrator-btn-player');
-const narratorBtnNarrator = document.getElementById('narrator-btn-narrator');
-const lobbyError        = document.getElementById('lobby-error');
+const readyBtn              = document.getElementById('ready-btn');
+const startBtn              = document.getElementById('start-btn');
+const narratorToggle        = document.getElementById('narrator-toggle');
+const narratorBtnPlayer     = document.getElementById('narrator-btn-player');
+const narratorBtnNarrator   = document.getElementById('narrator-btn-narrator');
+const lobbyError            = document.getElementById('lobby-error');
+const accusationsSetting    = document.getElementById('accusations-setting');
+const maxAccusationsInput   = document.getElementById('max-accusations-input');
 
 let isNarratorMode = false;
 const chatLog       = document.getElementById('chat-log');
@@ -40,9 +43,14 @@ const chatInput     = document.getElementById('chat-input');
 // ── Socket ────────────────────────────────────────────────────────────────────
 const socket = io();
 
+let lobbyJoined = false;
 socket.on('connect', () => {
     myId = socket.id;
-    if (isHost) {
+    if (lobbyJoined) return;
+    lobbyJoined = true;
+    if (rejoinCode) {
+        socket.emit('rejoin-lobby', { roomCode: rejoinCode, playerName: myName });
+    } else if (isHost) {
         socket.emit('create-room', { hostName: myName });
     } else {
         socket.emit('join-room', { roomCode, playerName: myName });
@@ -56,6 +64,7 @@ socket.on('room-created', ({ roomCode: code }) => {
     overlay.hidden = true;
     startBtn.hidden = false;
     narratorToggle.hidden = false;
+    accusationsSetting.hidden = false;
 });
 
 socket.on('room-joined', ({ roomCode: code }) => {
@@ -70,18 +79,27 @@ socket.on('room-updated', (room) => {
     renderCards(room.selectedCards, room.players, room.narratorMode);
     renderChat(room.messages);
     updateFooter(room);
+    if (isHost && room.maxAccusations != null) {
+        maxAccusationsInput.value = room.maxAccusations;
+    }
 });
 
 socket.on('join-error', ({ message }) => showError(message));
 socket.on('error', ({ message }) => { lobbyError.textContent = message; });
 
-socket.on('game-started', ({ assignments, narratorMode, narratorId }) => {
-    if (narratorMode && socket.id === narratorId) {
-        window.location.href = '/html/narrator.html';
+socket.on('game-started', ({ assignments, narratorMode }) => {
+    const code = codeDisplay.textContent;
+    const pid  = socket.id;
+    // Narrator has no card assignment
+    if (narratorMode && !assignments[pid]) {
+        sessionStorage.setItem('ww_roomCode', code);
+        sessionStorage.setItem('ww_playerId', pid);
+        const p = new URLSearchParams({ code, player: pid });
+        window.location.href = '/html/narrator.html?' + p.toString();
         return;
     }
-    const card = assignments[socket.id];
-    const p = new URLSearchParams({ card });
+    const card = assignments[pid];
+    const p = new URLSearchParams({ card, code, player: pid });
     window.location.href = '/html/game.html?' + p.toString();
 });
 
@@ -216,6 +234,12 @@ copyBtn.addEventListener('click', () => {
         copyBtn.textContent = '✓';
         setTimeout(() => { copyBtn.innerHTML = '&#10697;'; }, 1500);
     });
+});
+
+// Max accusations setting
+maxAccusationsInput.addEventListener('change', () => {
+    const v = parseInt(maxAccusationsInput.value, 10);
+    if (v >= 1 && v <= 10) socket.emit('set-max-accusations', { value: v });
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

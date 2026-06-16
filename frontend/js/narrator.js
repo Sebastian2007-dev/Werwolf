@@ -12,45 +12,64 @@ const playerGrid    = document.getElementById('player-grid');
 const logEntries    = document.getElementById('log-entries');
 const nextBtn       = document.getElementById('next-btn');
 const skipBtn       = document.getElementById('skip-btn');
-const summaryModal  = document.getElementById('summary-modal');
-const summaryBody   = document.getElementById('summary-body');
-const summaryAdv    = document.getElementById('summary-advance');
+const summaryModal    = document.getElementById('summary-modal');
+const summaryBody     = document.getElementById('summary-body');
+const summaryAdv      = document.getElementById('summary-advance');
+const dayResultModal    = document.getElementById('day-result-modal');
+const dayResultBody     = document.getElementById('day-result-body');
+const dayResultAdv      = document.getElementById('day-result-advance');
+const gameOverActions   = document.getElementById('game-over-actions');
+const restartSameBtn    = document.getElementById('restart-same-btn');
+const restartNewBtn     = document.getElementById('restart-new-btn');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentPhase    = 'day-prep';
 let pendingSummary  = null;
+const params = new URLSearchParams(window.location.search);
+const roomCode = params.get('code')   || sessionStorage.getItem('ww_roomCode');
+let currentPlayerId = params.get('player') || sessionStorage.getItem('ww_playerId');
 
 const PHASE_LABELS = {
-    'day-prep':      ['Vorbereitungsrunde', 'Tag',   'Alle Spieler dürfen reden. Starte die erste Nacht wenn bereit.'],
-    'night':         ['Nacht',              'Nacht', ''],
-    'night-summary': ['Nachtauswertung',    'Morgen','Die Nacht ist vorbei — sieh dir die Zusammenfassung an.'],
-    'day-vote':      ['Tagesrunde',         'Tag',   'Das Dorf berät und stimmt ab. Starte die nächste Nacht wenn bereit.'],
+    'day-prep':       ['Vorbereitungsrunde', 'Tag',       'Alle Spieler dürfen reden. Starte die erste Nacht wenn bereit.'],
+    'night':          ['Nacht',              'Nacht',     ''],
+    'night-summary':  ['Nachtauswertung',    'Morgen',    'Die Nacht ist vorbei — sieh dir die Zusammenfassung an.'],
+    'day-accusation': ['Anklage-Phase',      'Tag',       'Spieler nominieren Angeklagte…'],
+    'day-voting':     ['Abstimmung',         'Tag',       'Spieler stimmen über die Angeklagten ab…'],
+    'day-result':     ['Tagesergebnis',      'Tag',       'Sieh dir das Ergebnis an.'],
 };
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 const socket = io();
 
 socket.on('connect', () => {
-    // narrator reconnects – server already knows who we are via socket.id in room
+    if (!roomCode || !currentPlayerId) {
+        phaseStatus.textContent = 'Verbindung zum Raum fehlt. Starte das Spiel neu aus der Lobby.';
+        nextBtn.disabled = true;
+        return;
+    }
+    socket.emit('resume-game', { roomCode, playerId: currentPlayerId });
+});
+
+socket.on('resume-ok', () => {
+    currentPlayerId = socket.id; // Keep track of current socket ID for reconnects
+    nextBtn.disabled = false;
+});
+
+socket.on('resume-error', ({ message }) => {
+    phaseStatus.textContent = message;
+    nextBtn.disabled = true;
+    skipBtn.disabled = true;
 });
 
 socket.on('narrator-update', (data) => {
     currentPhase = data.phase;
     updateHeader(data.phase, data.round);
-    updatePhaseCard(data.phase, data.activeEntry, data.waiting);
+    updatePhaseCard(data.phase, data.activeEntry, data.waiting, data.progress);
     if (data.players) renderPlayerGrid(data.players);
     if (data.events)  renderLog(data.events);
     updateButtons(data.phase, data.activeEntry, data.waiting);
-});
-
-socket.on('night-summary', (data) => {
-    pendingSummary = data;
-    currentPhase   = 'night-summary';
-    updateHeader('night-summary', data.round ?? 1);
-    if (data.players) renderPlayerGrid(data.players);
-    if (data.events)  renderLog(data.events);
-    updateButtons('night-summary', null, false);
-    showSummary(data.summary);
+    if (data.phase === 'night-summary' && data.summary) showSummary(data.summary);
+    if (data.phase === 'day-result') showDayResult(data.eliminated, data.skipped);
 });
 
 socket.on('phase-changed', ({ phase, round }) => {
@@ -70,8 +89,26 @@ socket.on('game-over', ({ winner, message }) => {
     phaseStatus.textContent  = '';
     phaseBadge.textContent   = 'Ende';
     phaseBadge.className     = 'nh__badge';
-    nextBtn.hidden  = true;
-    skipBtn.hidden  = true;
+    nextBtn.hidden       = true;
+    skipBtn.hidden       = true;
+    gameOverActions.hidden = false;
+});
+
+socket.on('game-started', ({ assignments, narratorMode }) => {
+    if (narratorMode && !assignments[currentPlayerId]) {
+        const p = new URLSearchParams({ code: roomCode, player: currentPlayerId });
+        window.location.href = '/html/narrator.html?' + p.toString();
+    }
+});
+
+socket.on('back-to-lobby', ({ name, isHost, roomCode: rc }) => {
+    const p = new URLSearchParams({ rejoin: rc, name });
+    if (isHost) p.set('host', '1');
+    window.location.href = '/html/lobby.html?' + p.toString();
+});
+
+socket.on('session-ended', () => {
+    window.location.href = '/';
 });
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -82,11 +119,11 @@ function updateHeader(phase, round) {
     roundDisplay.textContent = `Runde ${round ?? 1}`;
 }
 
-function updatePhaseCard(phase, entry, waiting) {
+function updatePhaseCard(phase, entry, waiting, progress) {
     const [eyebrow, title, hint] = PHASE_LABELS[phase] ?? ['—', '—', ''];
     const isNight = phase === 'night';
 
-    phaseCard.classList.toggle('is-night', isNight);
+    phaseCard.classList.toggle('is-night', isNight || phase === 'night-summary');
     phaseEyebrow.textContent = eyebrow;
 
     if (isNight && entry) {
@@ -96,6 +133,16 @@ function updatePhaseCard(phase, entry, waiting) {
             ? `Warte auf: ${entry.playerNames?.join(', ') ?? '—'}`
             : 'Aktion erhalten — drücke Weiter.';
         phaseStatus.className = 'phase-card__status' + (waiting ? '' : ' is-done');
+    } else if (phase === 'day-accusation' && progress) {
+        phaseTitle.textContent = title;
+        phaseHint.textContent  = hint;
+        phaseStatus.textContent = `${progress.nominated} / ${progress.total} nominiert (${progress.skipped} übersprungen)`;
+        phaseStatus.className = 'phase-card__status';
+    } else if (phase === 'day-voting' && progress) {
+        phaseTitle.textContent = title;
+        phaseHint.textContent  = hint;
+        phaseStatus.textContent = `${progress.voted} / ${progress.total} abgestimmt`;
+        phaseStatus.className = 'phase-card__status';
     } else {
         phaseTitle.textContent   = title;
         phaseHint.textContent    = hint;
@@ -133,17 +180,18 @@ function renderLog(events) {
 }
 
 function updateButtons(phase, entry, waiting) {
+    gameOverActions.hidden = (phase !== 'game-over');
     if (phase === 'night') {
         skipBtn.hidden = !waiting;
         nextBtn.textContent = 'Weiter →';
         nextBtn.hidden = false;
-    } else if (phase === 'night-summary') {
+    } else if (phase === 'night-summary' || phase === 'day-accusation' || phase === 'day-voting' || phase === 'day-result' || phase === 'game-over') {
         skipBtn.hidden = true;
         nextBtn.hidden = true;
     } else {
         skipBtn.hidden = true;
         nextBtn.hidden = false;
-        nextBtn.textContent = phase === 'day-prep' ? 'Nacht beginnt →' : 'Nächste Nacht →';
+        nextBtn.textContent = 'Nacht beginnt →';
     }
 }
 
@@ -189,6 +237,45 @@ summaryAdv.addEventListener('click', () => {
 summaryModal.addEventListener('click', (e) => {
     if (e.target === summaryModal) summaryModal.close();
 });
+
+dayResultAdv.addEventListener('click', () => {
+    dayResultModal.close();
+    socket.emit('phase-advance');
+});
+
+restartSameBtn.addEventListener('click', () => {
+    gameOverActions.hidden = true;
+    socket.emit('restart-game');
+});
+
+restartNewBtn.addEventListener('click', () => {
+    gameOverActions.hidden = true;
+    socket.emit('reset-to-lobby');
+});
+
+dayResultModal.addEventListener('click', (e) => {
+    if (e.target === dayResultModal) dayResultModal.close();
+});
+
+function showDayResult(eliminated, skipped) {
+    dayResultBody.innerHTML = '';
+    let text, cls;
+    if (skipped) {
+        text = 'Das Dorf überspringt die Abstimmung — niemand wird eliminiert.';
+        cls = '';
+    } else if (eliminated) {
+        text = `${h(eliminated.name)} (${h(eliminated.roleName)}) wurde vom Dorf eliminiert.`;
+        cls = 'is-death';
+    } else {
+        text = 'Unentschieden — niemand wird eliminiert.';
+        cls = '';
+    }
+    const p = document.createElement('p');
+    p.className = `summary-line ${cls}`;
+    p.innerHTML = text;
+    dayResultBody.appendChild(p);
+    dayResultModal.showModal();
+}
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 function h(str) {

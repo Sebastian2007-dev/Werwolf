@@ -36,9 +36,8 @@ frontend/index.html
 Für das Backend (optional):
 
 ```bash
-cd backend
-npm install
-node server.js
+npm run install:backend
+npm start
 ```
 
 ## Projektstruktur

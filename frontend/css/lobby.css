@@ -406,6 +406,34 @@ body {
 .lf-btn:not(:disabled):hover { opacity: 0.85; transform: translateY(-1px); }
 .lf-btn:not(:disabled):active { transform: translateY(0); }
 
+/* Max accusations setting */
+.accusations-setting[hidden] { display: none; }
+.accusations-setting {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+.accusations-setting__label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.accusations-setting__input {
+    width: 3.2rem;
+    padding: 0.2rem 0.4rem;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--accent);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    text-align: center;
+}
+.accusations-setting__input:focus { outline: none; border-color: rgba(200,170,110,0.5); }
+
 /* === Overlay === */
 .overlay {
     position: fixed;
