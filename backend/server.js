@@ -25,6 +25,7 @@ const NIGHT_ORDER = [
     { group: 'Silberschmied',   roleIds: ['Silberschmied'],                                    firstNightOnly: true,   actionType: 'select-one',    hint: 'Rüste einen Spieler mit Silberwaffen aus.' },
     { group: 'Dorfmatratze',    roleIds: ['Dorfmatraze'],                                      firstNightOnly: false,  actionType: 'select-one',    hint: 'Bei wem schläfst du heute Nacht?' },
     { group: 'Seherin',         roleIds: ['Seherin'],                                          firstNightOnly: false,  actionType: 'view',          hint: 'Schau dir die Karte eines Spielers an.' },
+    { group: 'Händler',         roleIds: ['Haendler'],                                         firstNightOnly: false,  actionType: 'select-one',    hint: 'Schicke einen Spieler für diese Runde einkaufen.' },
     { group: 'Werwölfe',        roleIds: ['Werwolf_blau','Werwolf_gelb','Werwolf_gruen','Werwolf_rot'], firstNightOnly: false, actionType: 'kill', hint: 'Wählt gemeinsam ein Opfer aus.' },
     { group: 'Hexe',            roleIds: ['Hexe'],                                             firstNightOnly: false,  actionType: 'witch',         hint: 'Du kannst heilen oder vergiften.' },
     { group: 'Einsamer Wolf',   roleIds: ['EinsamerWolf'],                                     everySecondNight: true, actionType: 'select-one',    hint: 'Wähle einen Werwolf, den du tötest.' },
@@ -104,13 +105,19 @@ function replacePlayerSocket(room, oldId, newId) {
         replaceIdInSet(g.wolfConfirms, oldId, newId);
         replaceObjectKey(g.wolfVotes, oldId, newId);
 
-        if (g.nightVictim === oldId) g.nightVictim = newId;
-        if (g.hexeHealTarget === oldId) g.hexeHealTarget = newId;
-        if (g.hexePoisonTarget === oldId) g.hexePoisonTarget = newId;
-        if (g.dorfmatraze_sleep === oldId) g.dorfmatraze_sleep = newId;
-        if (g.magd_herr      === oldId) g.magd_herr      = newId;
-        if (g.wildesKind_idol === oldId) g.wildesKind_idol = newId;
+        if (g.nightVictim === oldId)             g.nightVictim             = newId;
+        if (g.hexeHealTarget === oldId)          g.hexeHealTarget          = newId;
+        if (g.hexePoisonTarget === oldId)        g.hexePoisonTarget        = newId;
+        if (g.dorfmatraze_sleep === oldId)       g.dorfmatraze_sleep       = newId;
+        if (g.haendler_away === oldId)           g.haendler_away           = newId;
+        if (g.magd_herr      === oldId)          g.magd_herr               = newId;
+        if (g.wildesKind_idol === oldId)         g.wildesKind_idol         = newId;
+        if (g.silberschmied_protected === oldId) g.silberschmied_protected = newId;
+        if (g.einsamerWolf_target === oldId)     g.einsamerWolf_target     = newId;
+        if (g.jack_target === oldId)             g.jack_target             = newId;
+        if (g.gendarm_target === oldId)          g.gendarm_target          = newId;
         replaceIdInArray(g.lovers, oldId, newId);
+        replaceIdInSet(g.spectators, oldId, newId);
 
         g.nightQueue?.forEach(entry => replaceIdInArray(entry.playerIds, oldId, newId));
     }
@@ -121,6 +128,17 @@ function replacePlayerSocket(room, oldId, newId) {
 function pushCurrentGameState(code, room, socket) {
     const g = room.game;
     if (!g) return;
+
+    // Katz und Maus: inform each of their partner (re-sent on every reconnect)
+    const katzeId = Object.entries(room.assignments).find(([, rid]) => rid === 'Katze')?.[0];
+    const mausId  = Object.entries(room.assignments).find(([, rid]) => rid === 'Maus')?.[0];
+    if (katzeId && mausId) {
+        if (socket.id === katzeId) {
+            socket.emit('you-are-katz-maus', { role: 'Katze', partnerName: playerName(room, mausId) });
+        } else if (socket.id === mausId) {
+            socket.emit('you-are-katz-maus', { role: 'Maus', partnerName: playerName(room, katzeId) });
+        }
+    }
 
     if (g.narratorId === socket.id) {
         const entry = g.nightQueue?.[g.nightIdx] ?? null;
@@ -140,6 +158,26 @@ function pushCurrentGameState(code, room, socket) {
             waiting: g.phase === 'night' ? !entry?.done : false,
         };
         socket.emit('narrator-update', payload);
+        return;
+    }
+
+    // Dead player → spectator mode
+    if (!g.alive.has(socket.id)) {
+        g.spectators.add(socket.id);
+        socket.emit('you-are-dead');
+        const entry = g.nightQueue?.[g.nightIdx] ?? null;
+        socket.emit('narrator-update', {
+            phase: g.phase, round: g.round,
+            activeEntry: entry ? {
+                group: entry.group, hint: entry.hint,
+                actionType: entry.actionType,
+                playerNames: entry.playerIds.map(id => playerName(room, id)),
+                done: entry.done,
+            } : null,
+            summary: g.nightSummary,
+            events: g.events,
+            players: playerStatusList(room, g),
+        });
         return;
     }
 
@@ -303,6 +341,7 @@ function playerStatusList(room, game) {
 
 function narratorPush(game, payload) {
     if (game.narratorId) io.to(game.narratorId).emit('narrator-update', payload);
+    game.spectators?.forEach(sid => io.to(sid).emit('narrator-update', payload));
 }
 
 function findPlayerByRole(room, roleId) {
@@ -350,11 +389,14 @@ function tryWildesKindTransform(code, room, deadId) {
     io.to(wkId).emit('wildeskind-transform', { idolName });
 }
 
-function buildNightQueue(assignments, alive, round) {
+function buildNightQueue(assignments, alive, round, g) {
     const queue = [];
     for (const tpl of NIGHT_ORDER) {
         if (tpl.firstNightOnly  && round > 1)          continue;
         if (tpl.everySecondNight && round % 2 !== 0)   continue;
+        if (tpl.group === 'Glöckner'        && g?.gloeckner_used)  continue;
+        if (tpl.group === 'Gendarm'         && g?.gendarm_used)    continue;
+        if (tpl.group === 'Jack the Ripper' && g?.jack_isWolf)     continue;
 
         const pids = Object.entries(assignments)
             .filter(([pid, rid]) => tpl.roleIds.includes(rid) && alive.has(pid))
@@ -376,7 +418,7 @@ function buildNightQueue(assignments, alive, round) {
 function startNight(code, room) {
     const g = room.game;
     g.phase       = 'night';
-    g.nightQueue  = buildNightQueue(room.assignments, g.alive, g.round);
+    g.nightQueue  = buildNightQueue(room.assignments, g.alive, g.round, g);
 
     // Transformed WildesKind joins the wolf night turn
     if (g.wildesKind_isWolf) {
@@ -384,6 +426,14 @@ function startNight(code, room) {
         if (wkId && g.alive.has(wkId)) {
             const wolfEntry = g.nightQueue.find(e => e.group === 'Werwölfe');
             if (wolfEntry) wolfEntry.playerIds.push(wkId);
+        }
+    }
+    // Transformed JackTheRipper joins the wolf night turn
+    if (g.jack_isWolf) {
+        const jackId = findPlayerByRole(room, 'JackTheRipper');
+        if (jackId && g.alive.has(jackId)) {
+            const wolfEntry = g.nightQueue.find(e => e.group === 'Werwölfe');
+            if (wolfEntry) wolfEntry.playerIds.push(jackId);
         }
     }
     g.nightIdx    = -1;
@@ -394,8 +444,12 @@ function startNight(code, room) {
     g.nightLog           = [];
     g.dorfmatraze_sleep     = null;
     g.dorfmatraze_protected = false;
+    g.haendler_away         = null;
     g.wolfVotes             = {};
     g.wolfConfirms          = new Set();
+    g.einsamerWolf_target   = null;
+    g.jack_target           = null;
+    g.gendarm_target        = null;
 
     addEvent(g, `Nacht ${g.round} beginnt.`);
     io.to(code).emit('phase-changed', { phase: 'night', round: g.round });
@@ -419,11 +473,20 @@ function advanceNight(code, room) {
 
     // Notify active role players
     entry.playerIds.forEach(pid => {
-        const myTargets = entry.actionType === 'kill-wolf'
+        let myTargets = entry.actionType === 'kill-wolf'
             ? targets.filter(t => isWolf(room, t.id))
             : entry.actionType === 'kill'
                 ? targets.filter(t => !isWolf(room, t.id))
                 : targets.filter(t => t.id !== pid);
+
+        // Special target overrides
+        if (entry.group === 'Dieb' && g.diebOptions?.length > 0) {
+            myTargets = g.diebOptions.map(rid => ({ id: rid, name: ROLE_NAMES[rid] ?? rid }));
+        } else if (entry.group === 'Glöckner') {
+            myTargets = [{ id: '__ring__', name: 'Glocken läuten' }];
+        } else if (entry.group === 'Einsamer Wolf') {
+            myTargets = targets.filter(t => isWolf(room, t.id));
+        }
 
         const extra = {};
         if (entry.actionType === 'witch') {
@@ -513,6 +576,7 @@ function processNightAction(code, room, entry, actorId, payload) {
         return false;
 
     } else if (entry.actionType === 'view') {
+        if (payload.acknowledged || !payload.targetId) return false;
         const tname = playerName(room, payload.targetId);
         const trole = roleName(room.assignments, payload.targetId);
         io.to(actorId).emit('view-result', { targetName: tname, roleName: trole, roleId: room.assignments[payload.targetId] });
@@ -571,6 +635,67 @@ function processNightAction(code, room, entry, actorId, payload) {
             g.nightLog.push(`Amor: ${n1} ♥ ${n2}`);
         }
 
+    } else if (entry.group === 'Händler') {
+        if (payload.targetId) {
+            g.haendler_away = payload.targetId;
+            const tname = playerName(room, payload.targetId);
+            addEvent(g, `Händler schickt jemanden einkaufen.`);
+            g.nightLog.push(`Händler schickt ${tname} einkaufen.`);
+        }
+
+    } else if (entry.group === 'Silberschmied') {
+        if (payload.targetId) {
+            g.silberschmied_protected = payload.targetId;
+            addEvent(g, `Silberschmied rüstet jemanden mit Silberwaffen aus.`);
+            g.nightLog.push(`Silberschmied → ${playerName(room, payload.targetId)} (Silberschutz)`);
+        }
+
+    } else if (entry.group === 'Einsamer Wolf') {
+        if (payload.targetId) {
+            g.einsamerWolf_target = payload.targetId;
+            addEvent(g, `Einsamer Wolf hat ein Ziel ausgewählt.`);
+            g.nightLog.push(`Einsamer Wolf → ${playerName(room, payload.targetId)}`);
+        }
+
+    } else if (entry.group === 'Jack the Ripper') {
+        if (payload.targetId) {
+            g.jack_target = payload.targetId;
+            addEvent(g, `Jack the Ripper hat seinen heutigen Besuch ausgewählt.`);
+            g.nightLog.push(`Jack → ${playerName(room, payload.targetId)}`);
+        }
+
+    } else if (entry.group === 'Gendarm') {
+        if (payload.targetId) {
+            g.gendarm_target = payload.targetId;
+            g.gendarm_used   = true;
+            addEvent(g, `Gendarm verhaftet jemanden.`);
+            g.nightLog.push(`Gendarm → ${playerName(room, payload.targetId)}`);
+        }
+
+    } else if (entry.group === 'Glöckner') {
+        if (payload.targetId === '__ring__') {
+            g.gloeckner_used = true;
+            const remaining  = g.nightQueue.slice(g.nightIdx + 1);
+            const wolfRelIdx = remaining.findIndex(e => e.group === 'Werwölfe');
+            if (wolfRelIdx !== -1) {
+                g.nightQueue.splice(g.nightIdx + 1 + wolfRelIdx, 1);
+                addEvent(g, `Der Glöckner läutet die Glocken — die Werwölfe schlafen diese Nacht.`);
+                g.nightLog.push(`Glöckner läutet — Werwolfrunde übersprungen`);
+            } else {
+                addEvent(g, `Der Glöckner läutet — aber die Werwölfe haben heute bereits gehandelt.`);
+                g.nightLog.push(`Glöckner läutet — kein Effekt (Wölfe bereits dran)`);
+            }
+        }
+
+    } else if (entry.group === 'Dieb') {
+        const chosenRole = payload.targetId;
+        if (chosenRole && g.diebOptions?.includes(chosenRole)) {
+            room.assignments[actorId] = chosenRole;
+            io.to(actorId).emit('role-changed', { roleId: chosenRole });
+            addEvent(g, `Dieb hat eine neue Rolle übernommen.`);
+            g.nightLog.push(`Dieb → ${ROLE_NAMES[chosenRole] ?? chosenRole}`);
+        }
+
     } else {
         // Generic: select-one, select-two, optional, etc.
         const ids = payload.targets ?? payload.targetIds ?? (payload.targetId ? [payload.targetId] : []);
@@ -607,13 +732,32 @@ function endNight(code, room) {
     const dorfmatrazeId = Object.entries(room.assignments)
         .find(([id, rid]) => rid === 'Dorfmatraze' && g.alive.has(id))?.[0];
 
-    // Compute wolf-attack deaths (with Dorfmatratze mechanic)
+    // Compute wolf-attack deaths (with Dorfmatratze, Händler, and Silberschmied mechanics)
+    let silberProtected = false;
+    let silberWolfDied  = null;
     if (g.nightVictim) {
         if (dorfmatrazeId && g.nightVictim === dorfmatrazeId) {
             // Wolves attacked Dorfmatratze directly → she is protected, nothing happens
             g.dorfmatraze_protected = true;
             addEvent(g, `Die Werwölfe griffen die Dorfmatratze direkt an — sie war nicht zuhause.`);
             g.nightLog.push(`Dorfmatratze geschützt (direkt angegriffen)`);
+        } else if (g.haendler_away && g.nightVictim === g.haendler_away) {
+            // Wolves attacked the away player → protected (was shopping)
+            addEvent(g, `Die Werwölfe griffen jemanden an — die Person war einkaufen und blieb unverletzt.`);
+            g.nightLog.push(`Händler-Schutz: ${playerName(room, g.haendler_away)} war einkaufen`);
+        } else if (g.silberschmied_protected === g.nightVictim && !isWolf(room, g.nightVictim)) {
+            // Silberwaffe: victim survives, one random wolf dies instead
+            silberProtected = true;
+            const aliveWolves = [...g.alive].filter(id => isWolf(room, id));
+            if (aliveWolves.length > 0) {
+                silberWolfDied = aliveWolves[Math.floor(Math.random() * aliveWolves.length)];
+                g.pendingDeaths.add(silberWolfDied);
+                addEvent(g, `Die Silberwaffen haben einen Werwolf getötet! ${playerName(room, g.nightVictim)} überlebt.`);
+                g.nightLog.push(`Silberschmied: ${playerName(room, g.nightVictim)} überlebt, Wolf ${playerName(room, silberWolfDied)} stirbt`);
+            } else {
+                addEvent(g, `Die Silberwaffen schützen — kein Werwolf mehr am Leben.`);
+                g.nightLog.push(`Silberschmied: ${playerName(room, g.nightVictim)} überlebt (keine Wölfe mehr)`);
+            }
         } else {
             // Normal wolf kill — primary victim dies unless Hexe healed
             if (g.hexeHealTarget !== g.nightVictim) {
@@ -627,6 +771,51 @@ function endNight(code, room) {
         }
     }
     if (g.hexePoisonTarget) g.pendingDeaths.add(g.hexePoisonTarget);
+    // Händler protection: away player cannot be killed by any means (e.g. hexe poison)
+    if (g.haendler_away) g.pendingDeaths.delete(g.haendler_away);
+
+    // EinsamerWolf: kills the chosen wolf
+    if (g.einsamerWolf_target && g.alive.has(g.einsamerWolf_target) && isWolf(room, g.einsamerWolf_target)) {
+        g.pendingDeaths.add(g.einsamerWolf_target);
+        g.nightLog.push(`Einsamer Wolf tötet Werwolf: ${playerName(room, g.einsamerWolf_target)}`);
+    }
+
+    // Gendarm: kills the target; if the target is innocent, Gendarm also dies
+    if (g.gendarm_target && g.alive.has(g.gendarm_target)) {
+        g.pendingDeaths.add(g.gendarm_target);
+        if (!isWolf(room, g.gendarm_target)) {
+            const gendarmId = findPlayerByRole(room, 'Gendarm');
+            if (gendarmId && g.alive.has(gendarmId)) {
+                g.pendingDeaths.add(gendarmId);
+                g.nightLog.push(`Gendarm verhaftet Unschuldigen (${playerName(room, g.gendarm_target)}) — stirbt mit`);
+            }
+        } else {
+            g.nightLog.push(`Gendarm verhaftet Werwolf: ${playerName(room, g.gendarm_target)}`);
+        }
+    }
+
+    // JackTheRipper: if Dorfmatratze encounters Jack tonight, she dies and Jack mutates
+    const jackId = findPlayerByRole(room, 'JackTheRipper');
+    if (jackId && g.alive.has(jackId) && !g.jack_isWolf && dorfmatrazeId && g.alive.has(dorfmatrazeId)) {
+        const encountered = g.dorfmatraze_sleep === jackId ||
+                            (g.jack_target && g.dorfmatraze_sleep === g.jack_target);
+        if (encountered) {
+            g.pendingDeaths.add(dorfmatrazeId);
+            g.jack_isWolf = true;
+            io.to(jackId).emit('jack-transformed');
+            addEvent(g, `Jack the Ripper hat die Dorfmatratze getötet und ist zum Werwolf geworden!`);
+            g.nightLog.push(`Jack mutiert → Werwolf, Dorfmatratze stirbt`);
+        }
+    }
+
+    // Alter: silently survives the first wolf attack only (not hexe poison, not lover cascade)
+    const alterId = Object.entries(room.assignments)
+        .find(([id, rid]) => rid === 'Alter' && g.alive.has(id))?.[0];
+    if (alterId && g.nightVictim === alterId && g.pendingDeaths.has(alterId) && g.alter_lives > 1) {
+        g.pendingDeaths.delete(alterId);
+        g.alter_lives--;
+        g.nightLog.push(`Alter überlebt Wolfsangriff (${g.alter_lives} Leben übrig, geheim)`);
+    }
 
     // Liebespaar: stirbt einer, stirbt der andere mit
     if (g.lovers) {
@@ -645,6 +834,12 @@ function endNight(code, room) {
     const lines = [];
     if (g.dorfmatraze_protected) {
         lines.push(`Die Werwölfe haben heute Nacht die Dorfmatratze angegriffen — sie war aber nicht zuhause.`);
+    } else if (g.haendler_away && g.nightVictim === g.haendler_away) {
+        lines.push(`Die Werwölfe haben heute Nacht jemanden angegriffen — die Person war einkaufen und blieb unverletzt.`);
+    } else if (silberProtected) {
+        lines.push(silberWolfDied
+            ? `Die Silberwaffen haben einen Werwolf getötet! ${playerName(room, g.nightVictim)} überlebt.`
+            : `Die Silberwaffen schützen ${playerName(room, g.nightVictim)}.`);
     } else if (g.nightVictim) {
         const vname = playerName(room, g.nightVictim);
         const dorfmatratzeDied = dorfmatrazeId && g.pendingDeaths.has(dorfmatrazeId)
@@ -664,7 +859,22 @@ function endNight(code, room) {
         lines.push(`Die Werwölfe haben heute Nacht niemanden angegriffen.`);
     }
     if (g.hexePoisonTarget) {
-        lines.push(`Die Hexe hat ${playerName(room, g.hexePoisonTarget)} vergiftet.`);
+        if (g.haendler_away === g.hexePoisonTarget) {
+            lines.push(`Die Hexe hat ihr Gift eingesetzt — das Ziel war einkaufen und blieb unversehrt.`);
+        } else {
+            lines.push(`Die Hexe hat ${playerName(room, g.hexePoisonTarget)} vergiftet.`);
+        }
+    }
+    if (g.einsamerWolf_target && g.pendingDeaths.has(g.einsamerWolf_target)) {
+        lines.push(`Ein Werwolf wurde in dieser Nacht getötet.`);
+    }
+    if (g.gendarm_target) {
+        const gname = playerName(room, g.gendarm_target);
+        if (isWolf(room, g.gendarm_target)) {
+            lines.push(`Der Gendarm hat ${gname} verhaftet — einen Werwolf.`);
+        } else {
+            lines.push(`Der Gendarm hat einen Unschuldigen verhaftet und dabei sein Leben verloren.`);
+        }
     }
     if (g.pendingDeaths.size === 0) {
         lines.push(`Heute früh wacht das Dorf unversehrt auf.`);
@@ -692,7 +902,9 @@ function endNight(code, room) {
 
 function isWolf(room, id) {
     const rid = room.assignments[id];
-    return WOLF_IDS.has(rid) || (rid === 'WildesKind' && room.game.wildesKind_isWolf);
+    return WOLF_IDS.has(rid)
+        || (rid === 'WildesKind'    && room.game.wildesKind_isWolf)
+        || (rid === 'JackTheRipper' && room.game.jack_isWolf);
 }
 
 function checkWinCondition(room) {
@@ -700,6 +912,17 @@ function checkWinCondition(room) {
     const aliveIds  = [...g.alive];
     const wolves    = aliveIds.filter(id => isWolf(room, id));
     const nonWolves = aliveIds.filter(id => !isWolf(room, id));
+
+    // Easter egg: everyone is dead
+    if (g.alive.size === 0) {
+        return { winner: 'everyone-dead', message: 'XD' };
+    }
+
+    // EinsamerWolf: wins when last player alive
+    const ewId = findPlayerByRole(room, 'EinsamerWolf');
+    if (ewId && g.alive.has(ewId) && g.alive.size === 1) {
+        return { winner: 'einsamer-wolf', message: 'Der Einsame Wolf hat allein gewonnen!' };
+    }
 
     // Lovers: both alive, last two players standing
     if (g.lovers) {
@@ -762,12 +985,22 @@ function startDayAccusation(code, room) {
     g.dayAccused = [];
     g.dayVotes = {};
 
+    // Pre-register non-voters as skipped so voting can complete without them
+    if (g.haendler_away && g.alive.has(g.haendler_away)) {
+        g.dayNominations[g.haendler_away] = null;
+    }
+    const narrId = findPlayerByRole(room, 'Narr');
+    if (narrId && g.alive.has(narrId) && narrId !== g.haendler_away) {
+        g.dayNominations[narrId] = null;
+    }
+
     const alivePlayers = [...g.alive].map(id => ({ id, name: playerName(room, id) }));
     io.to(code).emit('phase-changed', {
         phase: 'day-accusation', round: g.round,
         players: alivePlayers, maxAccusations: g.maxAccusations,
+        awayPlayerId: g.haendler_away || null,
     });
-    narratorPush(g, { phase: 'day-accusation', round: g.round, players: playerStatusList(room, g), events: g.events });
+    narratorPush(g, { phase: 'day-accusation', round: g.round, players: playerStatusList(room, g), events: g.events, awayPlayerId: g.haendler_away || null });
 }
 
 function processDayNominations(code, room) {
@@ -798,15 +1031,15 @@ function startDayVoting(code, room) {
     g.dayVotes = {};
 
     const accused = g.dayAccused.map(id => ({ id, name: playerName(room, id) }));
-    io.to(code).emit('phase-changed', { phase: 'day-voting', round: g.round, accused });
-    narratorPush(g, { phase: 'day-voting', round: g.round, accused, players: playerStatusList(room, g), events: g.events });
+    io.to(code).emit('phase-changed', { phase: 'day-voting', round: g.round, accused, awayPlayerId: g.haendler_away || null });
+    narratorPush(g, { phase: 'day-voting', round: g.round, accused, players: playerStatusList(room, g), events: g.events, awayPlayerId: g.haendler_away || null });
 }
 
 function processDayVotes(code, room) {
     const g = room.game;
     const tally = {};
     for (const vid of Object.values(g.dayVotes)) {
-        tally[vid] = (tally[vid] ?? 0) + 1;
+        if (vid) tally[vid] = (tally[vid] ?? 0) + 1;
     }
 
     const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
@@ -815,16 +1048,23 @@ function processDayVotes(code, room) {
         eliminated = sorted[0][0];
     }
 
-    if (eliminated) {
+    // Narr immunity: cannot be eliminated by day vote
+    const narrId = findPlayerByRole(room, 'Narr');
+    let narrSurvived = false;
+    if (eliminated && eliminated === narrId) {
+        narrSurvived = true;
+        addEvent(g, `${playerName(room, narrId)} (Narr) überlebt — Narrenfreiheit.`);
+        eliminated = null;
+    } else if (eliminated) {
         addEvent(g, `${playerName(room, eliminated)} wurde vom Dorf eliminiert.`);
     } else {
         addEvent(g, 'Unentschieden — niemand wird eliminiert.');
     }
 
-    endDay(code, room, eliminated, false);
+    endDay(code, room, eliminated, false, narrSurvived);
 }
 
-function endDay(code, room, eliminatedId, skipped) {
+function endDay(code, room, eliminatedId, skipped, narrSurvived = false) {
     const g = room.game;
 
     if (eliminatedId) {
@@ -871,8 +1111,8 @@ function endDay(code, room, eliminatedId, skipped) {
         roleName: roleName(room.assignments, eliminatedId),
     } : null;
 
-    io.to(code).emit('phase-changed', { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped });
-    narratorPush(g, { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped, events: g.events, players: playerStatusList(room, g) });
+    io.to(code).emit('phase-changed', { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped, narrSurvived: !!narrSurvived });
+    narratorPush(g, { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped, narrSurvived: !!narrSurvived, events: g.events, players: playerStatusList(room, g) });
 }
 
 // ── Socket events ─────────────────────────────────────────────────────────────
@@ -979,9 +1219,14 @@ io.on('connection', (socket) => {
 
         const n = room.players.length - (room.narratorMode ? 1 : 0);
         if (room.players.length < 3)           { socket.emit('error', { message: 'Mindestens 3 Spieler werden benötigt.' }); return; }
-        if (room.selectedCards.length < n)     { socket.emit('error', { message: `Bitte mindestens ${n} Karten auswählen.` }); return; }
+        if (!room.selectedCards.some(id => WOLF_IDS.has(id))) { socket.emit('error', { message: 'Mindestens 1 Werwolf muss ausgewählt sein.' }); return; }
         if (!room.players.every(p => p.isReady)) { socket.emit('error', { message: 'Noch nicht alle Spieler sind bereit.' }); return; }
-        const picked = pickBalanced(room.selectedCards, n);
+
+        // Fehlende Karten mit Dorfbewohnern auffüllen
+        const paddedCards = [...room.selectedCards];
+        while (paddedCards.length < n) paddedCards.push('Dorfbewohner');
+
+        const picked = pickBalanced(paddedCards, n);
         if (typeof picked === 'string')        { socket.emit('error', { message: picked }); return; }
 
         // Assign cards — honour requested cards only if they are in the picked set
@@ -1018,10 +1263,28 @@ io.on('connection', (socket) => {
             dayNominations: {},
             dayAccused:     [],
             dayVotes:       {},
-            magd_herr:        null,
-            wildesKind_idol:  null,
-            wildesKind_isWolf: false,
+            magd_herr:              null,
+            wildesKind_idol:        null,
+            wildesKind_isWolf:      false,
+            alter_lives:            2,
+            silberschmied_protected: null,
+            einsamerWolf_target:    null,
+            jack_target:            null,
+            jack_isWolf:            false,
+            gendarm_target:         null,
+            gendarm_used:           false,
+            gloeckner_used:         false,
+            diebOptions:            null,
+            spectators:             new Set(),
         };
+
+        // Dieb: generate 2 extra role options from unassigned roles
+        const diebId = Object.entries(assignments).find(([, rid]) => rid === 'Dieb')?.[0];
+        if (diebId) {
+            const assignedRoles = new Set(Object.values(assignments));
+            const candidates    = Object.keys(ROLE_NAMES).filter(r => !assignedRoles.has(r));
+            room.game.diebOptions = shuffle(candidates).slice(0, Math.min(2, candidates.length));
+        }
 
         addEvent(room.game, 'Spiel gestartet.');
 
@@ -1048,7 +1311,12 @@ io.on('connection', (socket) => {
         if (!room.game || room.game.narratorId !== socket.id) return;
 
         const n = room.players.length - (room.narratorMode ? 1 : 0);
-        const picked = pickBalanced(room.selectedCards, n);
+
+        // Fehlende Karten mit Dorfbewohnern auffüllen
+        const paddedCards = [...room.selectedCards];
+        while (paddedCards.length < n) paddedCards.push('Dorfbewohner');
+
+        const picked = pickBalanced(paddedCards, n);
         if (typeof picked === 'string') { socket.emit('error', { message: picked }); return; }
 
         const pool = [...picked];
@@ -1078,10 +1346,29 @@ io.on('connection', (socket) => {
             dayNominations: {},
             dayAccused:     [],
             dayVotes:       {},
-            magd_herr:        null,
-            wildesKind_idol:  null,
-            wildesKind_isWolf: false,
+            magd_herr:              null,
+            wildesKind_idol:        null,
+            wildesKind_isWolf:      false,
+            alter_lives:            2,
+            silberschmied_protected: null,
+            einsamerWolf_target:    null,
+            jack_target:            null,
+            jack_isWolf:            false,
+            gendarm_target:         null,
+            gendarm_used:           false,
+            gloeckner_used:         false,
+            diebOptions:            null,
+            spectators:             new Set(),
         };
+
+        // Dieb: generate 2 extra role options from unassigned roles
+        const diebIdR = Object.entries(assignments).find(([, rid]) => rid === 'Dieb')?.[0];
+        if (diebIdR) {
+            const assignedRolesR = new Set(Object.values(assignments));
+            const candidatesR    = Object.keys(ROLE_NAMES).filter(r => !assignedRolesR.has(r));
+            room.game.diebOptions = shuffle(candidatesR).slice(0, Math.min(2, candidatesR.length));
+        }
+
         addEvent(room.game, 'Spiel neugestartet.');
 
         io.to(code).emit('game-started', {
@@ -1207,8 +1494,12 @@ io.on('connection', (socket) => {
         const g = room.game;
         if (!g || g.phase !== 'day-accusation') return;
         if (!g.alive.has(socket.id)) return;
+        if (g.haendler_away === socket.id) return;
+        if (findPlayerByRole(room, 'Narr') === socket.id) return;
 
-        g.dayNominations[socket.id] = targetId || null;
+        // Cannot nominate the away player — treat as skip
+        const effectiveTarget = (targetId && targetId !== g.haendler_away) ? targetId : null;
+        g.dayNominations[socket.id] = effectiveTarget;
         io.to(socket.id).emit('day-nomination-done');
 
         const nominations = Object.values(g.dayNominations);
@@ -1230,6 +1521,8 @@ io.on('connection', (socket) => {
         const g = room.game;
         if (!g || g.phase !== 'day-voting') return;
         if (!g.alive.has(socket.id)) return;
+        if (g.haendler_away === socket.id) return;
+        if (findPlayerByRole(room, 'Narr') === socket.id) return;
         if (!g.dayAccused.includes(targetId)) return;
 
         g.dayVotes[socket.id] = targetId;
@@ -1237,15 +1530,19 @@ io.on('connection', (socket) => {
 
         const counts = {};
         for (const vid of Object.values(g.dayVotes)) { counts[vid] = (counts[vid] ?? 0) + 1; }
-        const totalVoted = Object.keys(g.dayVotes).length;
-        io.to(code).emit('day-vote-update', { counts, totalVoted, totalVoters: g.alive.size });
+        const totalVoted   = Object.keys(g.dayVotes).length;
+        const liveNarrId   = findPlayerByRole(room, 'Narr');
+        const narrOffset   = (liveNarrId && g.alive.has(liveNarrId)) ? 1 : 0;
+        const awayOffset   = (g.haendler_away && g.alive.has(g.haendler_away) && g.haendler_away !== liveNarrId) ? 1 : 0;
+        const totalVoters  = g.alive.size - narrOffset - awayOffset;
+        io.to(code).emit('day-vote-update', { counts, totalVoted, totalVoters });
         narratorPush(g, {
             phase: 'day-voting', round: g.round,
-            progress: { voted: totalVoted, total: g.alive.size, counts },
+            progress: { voted: totalVoted, total: totalVoters, counts },
             players: playerStatusList(room, g), events: g.events,
         });
 
-        if (totalVoted >= g.alive.size) processDayVotes(code, room);
+        if (totalVoted >= totalVoters) processDayVotes(code, room);
     });
 
     // ─ Hunter shot (Jäger) ───────────────────────────────────────────────────
@@ -1329,6 +1626,17 @@ io.on('connection', (socket) => {
 
         const sendDone = processNightAction(code, room, entry, socket.id, payload);
         if (sendDone) io.to(socket.id).emit('night-turn-done');
+    });
+
+    // ─ Spectator ──────────────────────────────────────────────────────────────
+
+    socket.on('join-spectator', () => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { room } = ctx;
+        const g = room.game;
+        if (!g || g.alive.has(socket.id)) return;
+        g.spectators.add(socket.id);
     });
 
     // ─ Disconnect ─────────────────────────────────────────────────────────────

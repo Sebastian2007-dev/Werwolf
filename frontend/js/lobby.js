@@ -34,11 +34,23 @@ const narratorBtnNarrator   = document.getElementById('narrator-btn-narrator');
 const lobbyError            = document.getElementById('lobby-error');
 const accusationsSetting    = document.getElementById('accusations-setting');
 const maxAccusationsInput   = document.getElementById('max-accusations-input');
+const accusationsMinus      = document.getElementById('accusations-minus');
+const accusationsPlus       = document.getElementById('accusations-plus');
 
 let isNarratorMode = false;
 const chatLog       = document.getElementById('chat-log');
 const chatForm      = document.getElementById('chat-form');
 const chatInput     = document.getElementById('chat-input');
+const chatPanel     = document.querySelector('.lobby__col--chat');
+const chatToggle    = document.getElementById('chat-toggle');
+const chatBadge     = document.getElementById('chat-badge');
+const chatBackdrop  = document.getElementById('chat-backdrop');
+
+// Mobile chat state
+let chatPanelOpen   = false;
+let prevMsgCount    = 0;
+let unreadCount     = 0;
+let chatFirstRender = true;
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 const socket = io();
@@ -139,6 +151,10 @@ function renderCards(selectedCards, players, narratorMode) {
             const usable = Math.min(wolfCount, maxWolves);
             balanceWarn.textContent = `${wolfCount} Werwölfe gewählt — zufällig werden ${usable} davon genutzt (max. ${maxWolves} für ${total} Spieler).`;
             balanceWarn.hidden = false;
+        } else if (selCount < total) {
+            const missing = total - selCount;
+            balanceWarn.textContent = `${missing} fehlende${missing === 1 ? ' Karte wird' : ' Karten werden'} automatisch mit Dorfbewohnern aufgefüllt.`;
+            balanceWarn.hidden = false;
         } else {
             balanceWarn.hidden = true;
         }
@@ -195,14 +211,49 @@ function renderChat(messages) {
         `<div class="chat-msg"><span class="chat-msg__author">${h(m.author)}</span><span class="chat-msg__text">${h(m.text)}</span></div>`
     ).join('');
     if (atBottom) chatLog.scrollTop = chatLog.scrollHeight;
+
+    if (chatFirstRender) {
+        chatFirstRender = false;
+        prevMsgCount = messages.length;
+        return;
+    }
+    if (!chatPanelOpen && messages.length > prevMsgCount) {
+        unreadCount += messages.length - prevMsgCount;
+        updateChatBadge();
+    }
+    prevMsgCount = messages.length;
+}
+
+function updateChatBadge() {
+    chatBadge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+    chatBadge.classList.toggle('has-unread', unreadCount > 0);
+}
+
+function openChat() {
+    chatPanelOpen = true;
+    chatPanel.classList.add('is-open');
+    chatToggle.classList.add('is-open');
+    chatBackdrop.classList.add('is-visible');
+    unreadCount = 0;
+    prevMsgCount = currentRoom?.messages?.length ?? prevMsgCount;
+    updateChatBadge();
+    setTimeout(() => { chatLog.scrollTop = chatLog.scrollHeight; }, 50);
+}
+
+function closeChat() {
+    chatPanelOpen = false;
+    chatPanel.classList.remove('is-open');
+    chatToggle.classList.remove('is-open');
+    chatBackdrop.classList.remove('is-visible');
 }
 
 // ── Footer state ──────────────────────────────────────────────────────────────
 function updateFooter(room) {
     if (isHost) {
-        const needed   = room.players.length - (room.narratorMode ? 1 : 0);
-        const allReady = room.players.every(p => p.isHost || p.isReady);
-        const cardOk   = room.selectedCards.length >= needed && needed >= 2;
+        const needed      = room.players.length - (room.narratorMode ? 1 : 0);
+        const allReady    = room.players.every(p => p.isHost || p.isReady);
+        const wolfSelected = room.selectedCards.some(id => id.startsWith('Werwolf_'));
+        const cardOk      = wolfSelected && needed >= 2;
         startBtn.disabled = !(allReady && cardOk);
         return;
     }
@@ -229,6 +280,11 @@ chatForm.addEventListener('submit', (e) => {
     chatInput.value = '';
 });
 
+chatToggle.addEventListener('click', () => {
+    if (chatPanelOpen) closeChat(); else openChat();
+});
+chatBackdrop.addEventListener('click', closeChat);
+
 copyBtn.addEventListener('click', () => {
     navigator.clipboard.writeText(codeDisplay.textContent).then(() => {
         copyBtn.textContent = '✓';
@@ -237,9 +293,18 @@ copyBtn.addEventListener('click', () => {
 });
 
 // Max accusations setting
-maxAccusationsInput.addEventListener('change', () => {
+function emitAccusations() {
     const v = parseInt(maxAccusationsInput.value, 10);
     if (v >= 1 && v <= 10) socket.emit('set-max-accusations', { value: v });
+}
+maxAccusationsInput.addEventListener('change', emitAccusations);
+accusationsMinus.addEventListener('click', () => {
+    const v = parseInt(maxAccusationsInput.value, 10);
+    if (v > 1) { maxAccusationsInput.value = v - 1; emitAccusations(); }
+});
+accusationsPlus.addEventListener('click', () => {
+    const v = parseInt(maxAccusationsInput.value, 10);
+    if (v < 10) { maxAccusationsInput.value = v + 1; emitAccusations(); }
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

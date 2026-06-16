@@ -1,5 +1,84 @@
 # Changelog – Raum-Logik
 
+## [2026-06-16 23:55] Tote Spieler: Graue Karte + Zuschauer-Modus mit Ereignis-Log
+
+- Wenn ein Spieler stirbt, wird seine Karte grau (CSS `filter: grayscale(90%)`, `is-dead`-Klasse auf `card-scene`)
+- Ein scrollbares Ereignis-Log-Panel erscheint unten ("Zuschauer-Modus")
+- Todes-Erkennung im Client:
+  - `morning-reveal` / `morning-full-reveal`: prüft ob `currentPlayerId` in den Toten oder `hunterShot` ist
+  - `phase-changed` (day-result): prüft `eliminated.id` und `hunterShot.id`
+  - Reconnect: Server erkennt toten Spieler in `pushCurrentGameState` → sendet `you-are-dead` + `narrator-update`
+- `setDead()`: setzt `isDead = true`, graut Karte, zeigt Panel, versteckt Day-Panel, emittiert `join-spectator`
+- Server: `narratorPush` leitet Ereignisse auch an `g.spectators` weiter (toter Spieler bekommt gleiche `narrator-update`-Events wie Erzähler)
+- Server: `g.spectators = new Set()` in beiden Spielstart-Blöcken; `replacePlayerSocket` aktualisiert Spectator-IDs
+- `join-spectator`-Handler: fügt Spieler zu `g.spectators` hinzu (nur wenn tot)
+- Tote Spieler sehen keine Tagesabstimmungs-UI mehr (Day-Panel wird versteckt)
+
+## [2026-06-16 23:15] 6 Rollen vollständig implementiert: Dieb, Silberschmied, EinsamerWolf, JackTheRipper, Gendarm, Glöckner
+
+- **Dieb**: `g.diebOptions` (2 zufällige nicht-vergebene Rollen) wird bei Spielstart generiert; `advanceNight` schickt Rollen-IDs als Ziel-Buttons; bei Auswahl → `room.assignments[diebId] = chosenRole` + `role-changed`-Event an Client; Client aktualisiert angezeigte Karte sofort; Dieb-Optionen in beiden `room.game`-Initialisierungen
+- **Silberschmied**: Schutz (`g.silberschmied_protected`) wird in `processNightAction` gesetzt und bleibt dauerhaft; in `endNight` als dritter Fall im Wolf-Angriffs-Block: Opfer überlebt, zufälliger Werwolf stirbt stattdessen; Silber-Fall auch in Summary-Zeilen
+- **EinsamerWolf**: `g.einsamerWolf_target` in `processNightAction`; nur Wölfe als Ziel-Buttons (via `advanceNight`-Override); in `endNight` → Ziel in `pendingDeaths` wenn Wolf; Win-Bedingung: letzter Überlebender (`g.alive.size === 1`) → `winner: 'einsamer-wolf'`
+- **JackTheRipper**: `g.jack_target` in `processNightAction`; in `endNight`: Dorfmatratze stirbt wenn sie bei Jack oder Jacks Ziel schläft; `g.jack_isWolf = true` → `jack-transformed`-Event an Client; Jack tritt ab nächster Nacht dem Wolfsrudel bei (`startNight`-Logik); `buildNightQueue` überspringt Jacks Einzelzug wenn transformiert; `isWolf()` berücksichtigt `jack_isWolf`
+- **Gendarm**: `g.gendarm_target` + `g.gendarm_used = true` in `processNightAction`; `buildNightQueue` überspringt Gendarm nach erstem Einsatz; in `endNight`: Ziel stirbt; wenn Unschuldiger → Gendarm stirbt ebenfalls; Summary-Zeile je nach Wolf/Unschuldig
+- **Glöckner**: `g.gloeckner_used` wie Gendarm; `advanceNight` liefert `[{ id: '__ring__', name: 'Glocken läuten' }]` statt Spielerliste; in `processNightAction`: wenn `__ring__` gewählt → Werwölfe-Eintrag aus `nightQueue` entfernt; `buildNightQueue` überspringt Glöckner nach Einsatz
+- Neue Felder in `room.game`: `silberschmied_protected`, `einsamerWolf_target`, `jack_target`, `jack_isWolf`, `gendarm_target`, `gendarm_used`, `gloeckner_used`, `diebOptions` — in beiden game-Initialisierungen
+- `replacePlayerSocket` um neue Spieler-ID-Felder erweitert
+- Nacht-Reset in `startNight`: `einsamerWolf_target`, `jack_target`, `gendarm_target` werden pro Nacht zurückgesetzt
+- Frontend (game.html): Jack-Overlay (wildeskind-Overlay-CSS wiederverwendet)
+- Frontend (game.js): `jack-transformed`-Handler, `role-changed`-Handler (Dieb), `einsamer-wolf` in game-over-Labels
+
+## [2026-06-16 21:30] Narr implementiert
+
+- Kein Nacht-Zug, passiv
+- Darf nicht abstimmen/anklagen: `day-nominate` und `day-vote-cast` blockiert; in `startDayAccusation` als Überspringen vorregistriert
+- `totalVoters` in Abstimmung um Narr (+ ggf. Händler-Away) reduziert (keine Doppelzählung wenn Narr selbst away)
+- Narr-Immunität: wenn Narr die meisten Stimmen erhält → `narrSurvived = true`, Eliminierung gecancelt, eigene Meldung
+- `narrSurvived` in `phase-changed` (day-result) übermittelt; Frontend zeigt "Der Narr überlebt — Narrenfreiheit!"
+- Narr-Spieler sieht tagsüber "Du bist der Narr — du darfst nicht abstimmen." (showDayNoVote)
+- Wölfe können Narr normal töten
+
+## [2026-06-16 21:10] Katz und Maus implementiert
+
+- Kein Nacht-Zug, passiv
+- `pushCurrentGameState`: sendet `you-are-katz-maus { role, partnerName }` an Katze- und Maus-Spieler bei jedem (Re-)Connect
+- Gewinnen normal mit den Dorfbewohnern (kein eigener Win-Check)
+- Frontend: `katz-maus-panel` + `katz-maus-recall-btn` in game.html/css/js; amber-farbene Variante des love-panel
+
+## [2026-06-16 20:50] Alter implementiert
+
+- Passiver Effekt — kein Nacht-Zug
+- `alter_lives: 2` in beiden Game-State-Initialisierungen (start-game, restart-game)
+- `endNight`: Alter überlebt NUR einen direkten Wolfsangriff (`nightVictim === alterId`), still und ohne Meldung
+- Hexe-Gift und Liebespaar-Kaskade töten ihn normal (auch mit 2 Leben)
+- Reihenfolge: Händler-Schutz → Alter-Check → Liebespaar; stirbt sein Liebster, wird er danach re-added → stirbt
+- Nur Erzähler-Nachtlog: "Alter überlebt Wolfsangriff (X Leben übrig, geheim)"
+- Tagesabstimmung: stirbt sofort (normales Verhalten)
+
+## [2026-06-16 20:30] Händler implementiert
+
+- NIGHT_ORDER: Händler zwischen Seherin und Werwölfen eingetragen (select-one)
+- Nacht: Händler wählt einen Spieler; dieser wird als `g.haendler_away` gespeichert
+- Nachtauswertung: Away-Spieler wird aus `pendingDeaths` entfernt (Wolfsangriff + Hexengift)
+- Sonderfälle: Wölfe greifen away-Spieler an → eigene Morgen-Meldung; Hexe vergiftet away-Spieler → eigene Meldung
+- Taganklage: Away-Spieler wird vorab als Überspringen eingetragen; kann weder anklagen noch selbst angeklagt werden
+- Tagesabstimmung: Away-Spieler ist blockiert (server-seitig); totalVoters für Trigger und Anzeige um 1 reduziert
+- `awayPlayerId` in `phase-changed` (day-accusation, day-voting) an Clients übermittelt
+- Frontend: Away-Spieler sieht "Du bist heute einkaufen" statt Anklage-/Abstimmungs-UI
+- replacePlayerSocket: `g.haendler_away` wird bei Reconnect korrekt ersetzt
+
+## [2026-06-16 19:15] Seherin: acknowledged-Bug behoben
+
+- `processNightAction` view-Branch: ignoriert `{ acknowledged: true }` und leere targetId statt sie als neue Auswahl zu verarbeiten
+- Verhindert, dass ein zweites view-result mit leeren Werten an die Seherin gesendet wird
+
+## [2026-06-16 19:00] Auto-Fill: fehlende Karten mit Dorfbewohnern auffüllen
+
+- `start-game` und `restart-game` füllen `selectedCards` vor `pickBalanced` mit 'Dorfbewohner' auf wenn weniger Karten als Spieler
+- Werwolf-Pflicht bleibt: mindestens 1 Werwolf muss ausgewählt sein (sonst Fehlermeldung)
+- Lobby: Startbutton aktiv sobald ≥1 Wolf gewählt (nicht mehr an Kartenanzahl gebunden)
+- Lobby: Hinweistext "X fehlende Karten werden automatisch mit Dorfbewohnern aufgefüllt."
+
 ## [2026-06-17 00:10] Wildes Kind implementiert
 - **server.js**: `wildesKind_idol` + `wildesKind_isWolf` im Spielzustand; `processNightAction` speichert Idol; `tryWildesKindTransform(code, room, deadId)` — wenn Idol stirbt: `wildesKind_isWolf = true`, `wildeskind-transform` an Spieler gesendet; aufgerufen in `startDay`, `endDay`, `hunter-shot`; `isWolf(room, id)` — zentraler Wolf-Check (WOLF_IDS + transformiertes Wildes Kind); `checkWinCondition` und `advanceNight` (kill/kill-wolf Target-Filter) nutzen `isWolf`; `startNight` fügt transformiertes Wildes Kind der Werwolf-Nachtrunde hinzu
 - **game.js**: `wildeskind-transform`-Event — zeigt Overlay "Dein Idol ist gestorben — du bist jetzt ein Werwolf", aktualisiert Fraktions-Label auf der Karte

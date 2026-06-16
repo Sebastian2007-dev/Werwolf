@@ -232,6 +232,7 @@ body::before {
     width: min(560px, calc(100vw - 2rem));
     max-height: calc(100dvh - 4rem);
     padding: 0;
+    overflow: hidden;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85);
 }
 
@@ -319,6 +320,13 @@ body::before {
 .modal__content a:hover {
     text-decoration: underline;
 }
+
+/* === Custom Scrollbars === */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(200, 170, 110, 0.28); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(200, 170, 110, 0.52); }
+* { scrollbar-width: thin; scrollbar-color: rgba(200, 170, 110, 0.28) transparent; }
 
 /* === Responsive === */
 @media (max-width: 480px) {

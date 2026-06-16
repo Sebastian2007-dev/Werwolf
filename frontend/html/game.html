@@ -42,12 +42,24 @@
             <button class="game-btn game-btn--flip" id="flip-btn">Karte umdrehen</button>
             <button class="game-btn game-btn--info" id="info-btn" aria-label="Regelinfo">&#9432; Info</button>
             <button class="game-btn game-btn--love" id="love-recall-btn" hidden>&#9829; Liebespaar</button>
+            <button class="game-btn game-btn--katz-maus" id="katz-maus-recall-btn" hidden>K &amp; M</button>
+        </div>
+
+        <!-- Spectator panel: shown after the player has died -->
+        <div class="spectator-panel" id="spectator-panel" hidden>
+            <p class="spectator-panel__eyebrow">&#9760; Zuschauer-Modus</p>
+            <div class="spectator-panel__log" id="spectator-log"></div>
         </div>
 
         <!-- Liebespaar-Info (hidden until Amor reveals it) -->
         <div class="love-panel" id="love-panel" hidden>
             <span class="love-panel__heart">&#9829;</span>
             <p class="love-panel__text" id="love-panel-text"></p>
+        </div>
+
+        <!-- Katz-und-Maus-Info -->
+        <div class="katz-maus-panel" id="katz-maus-panel" hidden>
+            <p class="katz-maus-panel__text" id="katz-maus-panel-text"></p>
         </div>
 
     </main>
@@ -113,6 +125,15 @@
         <p class="wildeskind-overlay__reveal">Du bist jetzt ein Werwolf.</p>
         <p class="wildeskind-overlay__hint">Schlie&szlig;e dich ab sofort den Werwölfen an.</p>
         <button class="night-confirm" id="wildeskind-confirm">Verstanden &#10003;</button>
+    </div>
+
+    <!-- Jack the Ripper overlay: shown when Dorfmatratze encounters Jack and he becomes a wolf -->
+    <div class="wildeskind-overlay" id="jack-overlay" hidden>
+        <p class="wildeskind-overlay__eyebrow">Die Dorfmatratze ist dir begegnet</p>
+        <p class="wildeskind-overlay__idol">Jack the Ripper</p>
+        <p class="wildeskind-overlay__reveal">Du bist jetzt ein Werwolf.</p>
+        <p class="wildeskind-overlay__hint">Schlie&szlig;e dich ab sofort den Werwölfen an.</p>
+        <button class="night-confirm" id="jack-confirm">Verstanden &#10003;</button>
     </div>
 
     <!-- Ergebene Magd overlay: shown when her Herr dies and she takes his role -->

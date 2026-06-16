@@ -1,3 +1,6 @@
+# Deploy script (contains server IP + SSH key path)
+deploy.ps1
+
 # Logs
 logs
 *.log

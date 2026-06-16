@@ -65,7 +65,11 @@
             </div>
             <div class="accusations-setting" id="accusations-setting" hidden>
                 <label class="accusations-setting__label" for="max-accusations-input">Max. Anklagen:</label>
-                <input class="accusations-setting__input" id="max-accusations-input" type="number" min="1" max="10" value="3">
+                <div class="num-spin">
+                    <button class="num-spin__btn" id="accusations-minus" type="button" aria-label="Weniger">−</button>
+                    <input class="num-spin__input" id="max-accusations-input" type="number" min="1" max="10" value="3">
+                    <button class="num-spin__btn" id="accusations-plus" type="button" aria-label="Mehr">+</button>
+                </div>
             </div>
             <button class="lf-btn lf-btn--start" id="start-btn" hidden disabled>Spiel starten</button>
         </div>
@@ -79,6 +83,13 @@
             <a class="overlay__back" href="/" hidden id="overlay-back">Zur Startseite</a>
         </div>
     </div>
+
+    <!-- Mobile: Chat-Tab (slide-in Overlay) -->
+    <button class="chat-fab" id="chat-toggle" aria-label="Chat öffnen">
+        <span class="chat-fab__arrow" aria-hidden="true">&#x276E;</span>
+        <span class="chat-fab__badge" id="chat-badge"></span>
+    </button>
+    <div class="chat-backdrop" id="chat-backdrop"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="/js/lobby.js" type="module"></script>

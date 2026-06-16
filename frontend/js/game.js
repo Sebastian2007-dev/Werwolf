@@ -74,15 +74,41 @@ infoModal.addEventListener('click', (e) => { if (e.target === infoModal) infoMod
 const lovePanel      = document.getElementById('love-panel');
 const lovePanelText  = document.getElementById('love-panel-text');
 const loveRecallBtn  = document.getElementById('love-recall-btn');
-const gameOverOverlay = document.getElementById('game-over-overlay');
-const gameOverWinner  = document.getElementById('game-over-winner');
-const gameOverMessage = document.getElementById('game-over-message');
 
 let lovePartnerName = null;
 
 loveRecallBtn.addEventListener('click', () => {
     lovePanel.hidden = !lovePanel.hidden;
 });
+
+// ── Katz und Maus ─────────────────────────────────────────────────────────────
+const katzMausPanel     = document.getElementById('katz-maus-panel');
+const katzMausPanelText = document.getElementById('katz-maus-panel-text');
+const katzMausRecallBtn = document.getElementById('katz-maus-recall-btn');
+
+katzMausRecallBtn.addEventListener('click', () => {
+    katzMausPanel.hidden = !katzMausPanel.hidden;
+});
+
+const gameOverOverlay = document.getElementById('game-over-overlay');
+const gameOverWinner  = document.getElementById('game-over-winner');
+const gameOverMessage = document.getElementById('game-over-message');
+
+// ── Spectator / dead player ────────────────────────────────────────────────────
+const cardScene      = document.getElementById('card-scene');
+const spectatorPanel = document.getElementById('spectator-panel');
+const spectatorLog   = document.getElementById('spectator-log');
+let isDead = false;
+
+function setDead() {
+    if (isDead) return;
+    isDead = true;
+    cardScene.classList.add('is-dead');
+    spectatorPanel.hidden = false;
+    dayPanel.hidden = true;
+    nightOverlay.hidden = true;
+    socket.emit('join-spectator');
+}
 
 // ── Night overlay ─────────────────────────────────────────────────────────────
 const socket = io();
@@ -188,11 +214,12 @@ function resetActionPanels() {
 
 function buildTargetButtons(container, players, onSelect) {
     container.innerHTML = '';
-    players.forEach(p => {
+    players.forEach((p, idx) => {
         const btn = document.createElement('button');
         btn.className    = 'target-btn';
         btn.dataset.id   = p.id;
         btn.textContent  = p.name;
+        btn.style.setProperty('--btn-i', idx);
         btn.addEventListener('click', () => onSelect(p, btn, container));
         container.appendChild(btn);
     });
@@ -200,6 +227,7 @@ function buildTargetButtons(container, players, onSelect) {
 
 // Receive night turn
 socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
+    if (isDead) return;
     showOverlay();
     showActionUI();
     resetActionPanels();
@@ -326,6 +354,7 @@ socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
 
 // Seherin result
 socket.on('view-result', ({ targetName, roleId }) => {
+    if (isDead) return;
     showOverlay();
     showActionUI();
     resetActionPanels();
@@ -387,6 +416,7 @@ socket.on('wolf-vote-update', ({ voteCounts, majorityTarget, majorityTargetName,
 
 // Not our turn: show wait screen (skip if we are the active player)
 socket.on('night-waiting', ({ activePlayers }) => {
+    if (isDead) return;
     if (activePlayers?.includes(socket.id)) return;
     showOverlay();
     showWait('');
@@ -394,15 +424,23 @@ socket.on('night-waiting', ({ activePlayers }) => {
 
 // Our turn is done (server moved on)
 socket.on('night-turn-done', () => {
+    if (isDead) return;
     showWait('Gut gemacht. Warte auf die anderen…');
 });
 
 // Phase transitions
-socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped, hunterShot, hunterName }) => {
+socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived }) => {
+    // Day / night atmosphere
+    const nightPhases = ['night'];
+    const dayPhases   = ['night-summary','day-prep','day-accusation','day-voting','hunter-day-shot','day-result'];
+    document.body.classList.toggle('is-night', nightPhases.includes(phase));
+    document.body.classList.toggle('is-day',   dayPhases.includes(phase));
+
     if (phase === 'night') {
-        dayPanel.hidden = true;
         morningOverlay.hidden = true;
         hunterOverlay.hidden = true;
+        if (isDead) { nightOverlay.hidden = true; return; }
+        dayPanel.hidden = true;
     }
     if (phase === 'day-prep') {
         hideOverlay();
@@ -417,10 +455,18 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminate
     if (phase === 'day-accusation' && players) {
         morningOverlay.hidden = true;
         dayAlive = players.some(p => p.id === currentPlayerId);
-        if (dayAlive) showDayAccusation(players, maxAccusations);
+        if (dayAlive) {
+            if (awayPlayerId === currentPlayerId) {
+                showDayAway();
+            } else if (currentCardId === 'Narr') {
+                showDayNoVote();
+            } else {
+                showDayAccusation(players.filter(p => p.id !== awayPlayerId), maxAccusations);
+            }
+        }
     }
     if (phase === 'day-voting' && accused) {
-        if (dayAlive) showDayVoting(accused);
+        if (dayAlive && awayPlayerId !== currentPlayerId && currentCardId !== 'Narr') showDayVoting(accused);
     }
     if (phase === 'hunter-day-shot') {
         // All day-alive players see a wait message; the Jäger gets hunter-shoot separately
@@ -433,8 +479,9 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminate
         }
     }
     if (phase === 'day-result') {
+        if (eliminated?.id === currentPlayerId || hunterShot?.id === currentPlayerId) setDead();
         hunterOverlay.hidden = true;
-        if (dayAlive) showDayWaitResult(skipped, eliminated, hunterShot);
+        if (dayAlive && !isDead) showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived);
     }
 });
 
@@ -464,6 +511,10 @@ function showDayAccusation(players, maxAccusations) {
         btn.classList.add('is-selected');
         daySelectedId = p.id;
         dayAccuseBtn.hidden = false;
+        dayAccuseBtn.classList.remove('confirm-pop');
+        void dayAccuseBtn.offsetWidth; // reflow to restart animation
+        dayAccuseBtn.classList.add('confirm-pop');
+        dayAccuseBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
     dayAccuseBtn.onclick = () => {
@@ -490,6 +541,10 @@ function showDayVoting(accused) {
         btn.classList.add('is-selected');
         daySelectedId = p.id;
         dayVoteBtn.hidden = false;
+        dayVoteBtn.classList.remove('confirm-pop');
+        void dayVoteBtn.offsetWidth;
+        dayVoteBtn.classList.add('confirm-pop');
+        dayVoteBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
 
     dayVoteBtn.onclick = () => {
@@ -505,12 +560,30 @@ function showDayWait() {
     dayWaitText.textContent = 'Warte auf andere Spieler…';
 }
 
-function showDayWaitResult(skipped, eliminated, hunterShot) {
+function showDayAway() {
+    dayPanel.hidden = false;
+    dayAccusationUi.hidden = true;
+    dayVotingUi.hidden = true;
+    dayWaitUi.hidden = false;
+    dayWaitText.textContent = 'Du bist heute einkaufen — du kannst weder anklagen noch abstimmen.';
+}
+
+function showDayNoVote() {
+    dayPanel.hidden = false;
+    dayAccusationUi.hidden = true;
+    dayVotingUi.hidden = true;
+    dayWaitUi.hidden = false;
+    dayWaitText.textContent = 'Du bist der Narr — du darfst nicht abstimmen.';
+}
+
+function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived) {
     dayAccusationUi.hidden = true;
     dayVotingUi.hidden = true;
     dayWaitUi.hidden = false;
     let text;
-    if (skipped) {
+    if (narrSurvived) {
+        text = 'Der Narr überlebt — Narrenfreiheit!';
+    } else if (skipped) {
         text = 'Abstimmung übersprungen — niemand wird eliminiert.';
     } else if (eliminated) {
         text = `${eliminated.name} wurde vom Dorf eliminiert.`;
@@ -542,6 +615,7 @@ socket.on('morning-partial-reveal', ({ hunterDeath }) => {
 
 // Jäger shot: flip remaining dead cards + hunter's target card
 socket.on('morning-full-reveal', ({ deaths, hunterShot }) => {
+    if (deaths.some(d => d.id === currentPlayerId) || hunterShot?.id === currentPlayerId) setDead();
     const flipCard = (d) => {
         const cardEl = morningGrid.querySelector(`[data-player-id="${CSS.escape(d.id)}"]`);
         if (!cardEl) return;
@@ -587,6 +661,7 @@ socket.on('hunter-shoot', ({ targets }) => {
 
 // Narrator advances: reveal dead cards
 socket.on('morning-reveal', ({ deaths }) => {
+    if (deaths.some(d => d.id === currentPlayerId)) setDead();
     if (deaths.length === 0) {
         morningDeaths.textContent = 'Niemand';
         morningDeaths.classList.remove('has-deaths');
@@ -638,6 +713,34 @@ function showMorningScreen(players) {
     morningOverlay.hidden = false;
 }
 
+// Jack the Ripper: Dorfmatratze encountered Jack, he becomes a Werwolf
+socket.on('jack-transformed', () => {
+    document.getElementById('jack-overlay').hidden = false;
+    document.getElementById('jack-confirm').onclick = () => {
+        document.getElementById('jack-overlay').hidden = true;
+        roleFaction.textContent = FACTION_LABEL['W'] ?? 'Werwolf';
+        roleFaction.hidden = false;
+    };
+});
+
+// Dieb: picked a new role, update displayed card
+socket.on('role-changed', ({ roleId }) => {
+    currentCardId = roleId;
+    const newRole = ROLES.find(r => r.id === roleId);
+    if (newRole) {
+        document.getElementById('role-img').src = `/assets/${newRole.image}`;
+        document.getElementById('role-img').alt = newRole.name;
+        roleName.textContent    = newRole.name;
+        roleFaction.textContent = FACTION_LABEL[newRole.faction] ?? newRole.faction;
+        roleName.hidden    = false;
+        roleFaction.hidden = false;
+        cardFlip.classList.remove('is-flipped');
+        flipBtn.classList.remove('is-flipped');
+        flipBtn.textContent = 'Karte umdrehen';
+        document.title = `${newRole.name} – Werwolf`;
+    }
+});
+
 // Wildes Kind: its idol died, it becomes a Werwolf
 socket.on('wildeskind-transform', ({ idolName }) => {
     document.getElementById('wildeskind-idol-name').textContent = idolName;
@@ -685,6 +788,29 @@ socket.on('you-are-lovers', ({ partnerName }) => {
     loveRecallBtn.hidden = false;
 });
 
+socket.on('you-are-katz-maus', ({ role, partnerName }) => {
+    const other = role === 'Katze' ? 'Maus' : 'Katze';
+    katzMausPanelText.textContent = `Du bist die ${role}. Deine ${other} ist: ${partnerName}. Ihr gewinnt mit den Dorfbewohnern.`;
+    katzMausPanel.hidden    = false;
+    katzMausRecallBtn.hidden = false;
+});
+
+// Dead player: server confirms we're a spectator (on reconnect)
+socket.on('you-are-dead', () => setDead());
+
+// Spectator event log: narrator-update is forwarded to dead players by the server
+socket.on('narrator-update', ({ events }) => {
+    if (!isDead) return;
+    spectatorLog.innerHTML = '';
+    events.forEach(e => {
+        const p = document.createElement('p');
+        p.className = 'spectator-log__entry';
+        p.textContent = e.text;
+        spectatorLog.appendChild(p);
+    });
+    spectatorLog.scrollTop = spectatorLog.scrollHeight;
+});
+
 // Restart: narrator dealt new cards — go to new game page
 socket.on('game-started', ({ assignments }) => {
     const newCard = assignments[currentPlayerId];
@@ -707,7 +833,14 @@ socket.on('session-ended', () => {
 // Game over
 socket.on('game-over', ({ winner, message }) => {
     hideOverlay();
-    const labels = { lovers: 'Liebespaar', wolves: 'Werwölfe', villagers: 'Dorfbewohner' };
+    if (winner === 'everyone-dead') {
+        gameOverWinner.textContent  = '';
+        gameOverMessage.textContent = 'XD';
+        gameOverOverlay.hidden = false;
+        setTimeout(() => { window.location.href = 'https://www.youtube.com/watch?v=Aq5WXmQQooo'; }, 2000);
+        return;
+    }
+    const labels = { lovers: 'Liebespaar', wolves: 'Werwölfe', villagers: 'Dorfbewohner', 'einsamer-wolf': 'Einsamer Wolf' };
     gameOverWinner.textContent  = labels[winner] ?? winner;
     gameOverMessage.textContent = message;
     gameOverOverlay.hidden = false;
