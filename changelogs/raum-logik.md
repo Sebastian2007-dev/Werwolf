@@ -1,6 +1,87 @@
 # Changelog – Raum-Logik
 
-## [2026-06-16 23:55] Tote Spieler: Graue Karte + Zuschauer-Modus mit Ereignis-Log
+## [2026-06-17 21:30] Bugfix: "Noch nicht alle Spieler sind bereit" nach Neue-Karten-Neustart
+- `reset-to-lobby` setzte `isReady = false` für ALLE Spieler einschließlich Host — Host klickt aber nie Bereit
+- `start-game`-Check prüfte `p.isReady` für alle Spieler (Server), während der Client korrekt `p.isHost || p.isReady` verwendet
+- Fix 1: `reset-to-lobby` setzt `p.isReady = p.isHost` statt `false`
+- Fix 2: `start-game` prüft jetzt `p.isHost || p.isReady` (wie der Client)
+- Betrifft: `server.js`
+
+## [2026-06-17 21:15] Host-Aktionen im Spielende-Screen (Auto-Modus)
+- Alle drei `game-over`-Emits auf dem Server senden jetzt `hostId`
+- Spielende-Overlay zeigt dem Host zwei Schaltflächen: "Nochmal spielen ↺" und "Neue Karten →"
+- Buttons triggern `restart-game` / `reset-to-lobby` (serverseitig bereits auf Host beschränkt)
+- Betrifft: `server.js`, `game.html`, `game.css`, `game.js`
+
+## [2026-06-17 21:00] Bugfix: Jäger wurde am Tag eliminiert – Werwölfe gewannen sofort ohne Schuss
+- `endDay` prüfte `checkWinCondition` BEVOR der Jäger-Schuss ausgelöst wurde → wenn Wölfe durch den Jäger-Tod gewannen, endete das Spiel sofort
+- Fix: Jäger-Block in `endDay` vor den `checkWinCondition`-Aufruf verschoben; Win-Check läuft jetzt im `hunter-shot`-Handler nach dem Schuss
+- Betrifft: `server.js`
+
+## [2026-06-17 20:45] Anklage-Phase: Live-Tally + Skip-Bestätigung
+- Server emittiert `day-accusation-update` an alle Spieler nach jeder Nominierung (Tally + Skip-Anzahl)
+- Client zeigt `.vote-badge` auf Anklageschaltflächen (wie Wolfabstimmung) und Statuszeile `X/Y reagiert · Z überspringen`
+- Wartetext zeigt ebenfalls Fortschritt sobald der Spieler bereits nominiert hat
+- Überspringen-Schaltfläche erfordert jetzt Bestätigung: 1. Klick → "Wirklich überspringen?", 2. Klick → sendet; 3s Timeout zum Zurücksetzen
+- Betrifft: `server.js`, `game.html`, `game.css`, `game.js`
+
+## [2026-06-17 20:30] Bugfix: Auto-Modus – Werwölfe rücken nach Abstimmung nicht automatisch vor
+- `processNightAction` für `kill`-Typ emittiert `night-turn-done` direkt an alle Wölfe, gibt aber immer `false` zurück → der Auto-Advance-Timer im Socket-Handler wurde nie gesetzt
+- Fix: Wenn `entry.done = true` (Schwelle erreicht) und `g.autoMode`, wird der 800ms-`advanceNight`-Timer direkt im Wolf-Confirm-Block gesetzt
+- Betrifft: `server.js`
+
+## [2026-06-17 20:15] Bugfix: Auto-Modus – Tagphase startet nach Countdown nicht
+- `startDay()` setzte `g.phase` nie auf `'day-prep'` vor dem 5s-Timer
+- Der Guard `phase === 'day-prep'` im Timer-Callback schlug deshalb immer fehl → `startDayAccusation` wurde nie aufgerufen
+- Fix: `g.phase = 'day-prep'` direkt nach `clearAutoTimers(g)` im autoMode-Block setzen
+- Betrifft: `server.js`
+
+## [2026-06-17 20:00] Hexe UI – Redesign passend zum Nacht-UI-Stil
+- `.witch-ui__victim` ist jetzt schlicht-kursiver Muted-Text ohne Box
+- `.witch-btn--heal` / `.witch-btn--poison` nutzen denselben Basis-Stil wie `.target-btn`: semi-transparenter Hintergrund, `3px`-Akzentbalken links, verschiebt sich beim Hover (statt `opacity`-Effekt)
+- Aktiver Zustand (`.is-active`) zeigt farbigen Balken + getönten Hintergrund (grün für Heilen, rot für Vergiften)
+- `.witch-btn--confirm` übernimmt den Stil des `night-confirm`-Buttons (Gold-Akzent, `Cinzel`-Schrift)
+- `.witch-btn--pass` ist dezent sekundär (sehr gedämpft, `Cinzel`-Schrift)
+- Betrifft: `game.css`
+
+## [2026-06-17] Bugfix: Mitspieler-Modus startet nicht mehr (Auto-Modus sofort aktiv)
+- `g.autoMode = !narratorPlayerId` in beiden Spielstart-Blöcken — kein Erzähler = sofort Auto-Modus
+- 3s nach `game-started` → `auto-day-starting { countdown: 5, label: 'Nacht beginnt in' }` → nach 5s startet die erste Nacht automatisch
+- `reset-to-lobby` prüft jetzt Host ODER Erzähler (war zuvor nur Erzähler → Host im Mitspieler-Modus konnte Lobby nicht resetten)
+- Betrifft: `server.js`, `game.js`, `game.html`
+
+## [2026-06-17] Host-Verwaltung + Auto-Pilot-Modus
+- **Kick**: Host sieht ✕-Button neben Spielern → `kick-player` → Spieler wird zur Startseite weitergeleitet
+- **Erzähler zuweisen**: Host kann 📖-Button klicken → designierter Spieler wird Erzähler (kein Karte), Host spielt mit; `room.designatedNarrator`
+- **Auto-Pilot** wenn Erzähler das Spiel verlässt: `g.autoMode = true`; Banner, 5s Tag-Countdown, automatische Phasen-Übergänge (Night→Tag 3,5s, Day-Result→Nacht 4s), 30s Spieler-Inaktivität → 10s Warnung → Skip; atmosphärische Status-Meldungen (`autoStatusMsg`) an wartende Spieler
+- Betrifft: `server.js`, `lobby.js`, `lobby.css`, `game.js`, `game.html`, `game.css`, `narrator.js`
+
+## [2026-06-17] Bugfix: Raum-Code bleibt bei Seiten-Reload erhalten
+- Nach `room-created` schreibt der Host den Code via `history.replaceState()` in die URL (`?code=XXXXXX`) — kein Seiten-Reload
+- Beim Reload: wenn `isHost` und `code` im URL-Param → `rejoin-lobby` statt `create-room` → gleicher Raum, aktualisierte Socket-ID
+- Fallback: falls der Server neu gestartet wurde und der Raum nicht mehr existiert, erstellt der Host automatisch einen neuen Raum (Code wird aus URL entfernt)
+- Betrifft: `frontend/js/lobby.js`
+
+## [2026-06-17] QR-Code-Button in Lobby
+- Neuer "QR"-Button neben dem Kopieren-Button im Lobby-Header
+- Klick öffnet Modal mit QR-Code der direkten Join-URL (`/html/join.html?code=ROOMCODE`)
+- Spieler können den QR-Code abscannen und landen direkt auf der Beitrittsseite mit vorausgefülltem Code
+- Bibliothek: `qrcodejs@1.0.0` via jsDelivr CDN (kein Build-Schritt)
+- Schließen per Schließen-Button, Klick auf Backdrop oder Escape-Taste
+- Betrifft: `lobby.html`, `lobby.css`, `lobby.js`
+
+## [2026-06-17] Bugfix: Kopieren-Button funktioniert auf HTTP-Servern
+- `navigator.clipboard.writeText()` erfordert HTTPS — schlägt auf plain-HTTP-Servern lautlos fehl
+- Fallback auf `document.execCommand('copy')` via temporäres Textarea-Element wenn `window.isSecureContext` nicht gesetzt ist
+- Betrifft: `frontend/js/lobby.js`, Copy-Button für Raum-Code
+
+## [2026-06-16] Easter Egg: Alle Spieler tot
+
+- `checkWinCondition()`: erster Check — `g.alive.size === 0` → `{ winner: 'everyone-dead', message: 'XD' }`
+- Ohne diesen Check würde der Dorfbewohner-Check greifen (wolves.length === 0 wenn alle tot sind)
+- Client: `game-over` mit winner `'everyone-dead'` zeigt `'XD'`...
+
+## [2026-06-16] Tote Spieler: Graue Karte + Zuschauer-Modus mit Ereignis-Log
 
 - Wenn ein Spieler stirbt, wird seine Karte grau (CSS `filter: grayscale(90%)`, `is-dead`-Klasse auf `card-scene`)
 - Ein scrollbares Ereignis-Log-Panel erscheint unten ("Zuschauer-Modus")
@@ -14,7 +95,7 @@
 - `join-spectator`-Handler: fügt Spieler zu `g.spectators` hinzu (nur wenn tot)
 - Tote Spieler sehen keine Tagesabstimmungs-UI mehr (Day-Panel wird versteckt)
 
-## [2026-06-16 23:15] 6 Rollen vollständig implementiert: Dieb, Silberschmied, EinsamerWolf, JackTheRipper, Gendarm, Glöckner
+## [2026-06-16] 6 Rollen vollständig implementiert: Dieb, Silberschmied, EinsamerWolf, JackTheRipper, Gendarm, Glöckner
 
 - **Dieb**: `g.diebOptions` (2 zufällige nicht-vergebene Rollen) wird bei Spielstart generiert; `advanceNight` schickt Rollen-IDs als Ziel-Buttons; bei Auswahl → `room.assignments[diebId] = chosenRole` + `role-changed`-Event an Client; Client aktualisiert angezeigte Karte sofort; Dieb-Optionen in beiden `room.game`-Initialisierungen
 - **Silberschmied**: Schutz (`g.silberschmied_protected`) wird in `processNightAction` gesetzt und bleibt dauerhaft; in `endNight` als dritter Fall im Wolf-Angriffs-Block: Opfer überlebt, zufälliger Werwolf stirbt stattdessen; Silber-Fall auch in Summary-Zeilen
@@ -28,7 +109,7 @@
 - Frontend (game.html): Jack-Overlay (wildeskind-Overlay-CSS wiederverwendet)
 - Frontend (game.js): `jack-transformed`-Handler, `role-changed`-Handler (Dieb), `einsamer-wolf` in game-over-Labels
 
-## [2026-06-16 21:30] Narr implementiert
+## [2026-06-16] Narr implementiert
 
 - Kein Nacht-Zug, passiv
 - Darf nicht abstimmen/anklagen: `day-nominate` und `day-vote-cast` blockiert; in `startDayAccusation` als Überspringen vorregistriert
@@ -38,14 +119,14 @@
 - Narr-Spieler sieht tagsüber "Du bist der Narr — du darfst nicht abstimmen." (showDayNoVote)
 - Wölfe können Narr normal töten
 
-## [2026-06-16 21:10] Katz und Maus implementiert
+## [2026-06-16] Katz und Maus implementiert
 
 - Kein Nacht-Zug, passiv
 - `pushCurrentGameState`: sendet `you-are-katz-maus { role, partnerName }` an Katze- und Maus-Spieler bei jedem (Re-)Connect
 - Gewinnen normal mit den Dorfbewohnern (kein eigener Win-Check)
 - Frontend: `katz-maus-panel` + `katz-maus-recall-btn` in game.html/css/js; amber-farbene Variante des love-panel
 
-## [2026-06-16 20:50] Alter implementiert
+## [2026-06-16] Alter implementiert
 
 - Passiver Effekt — kein Nacht-Zug
 - `alter_lives: 2` in beiden Game-State-Initialisierungen (start-game, restart-game)
@@ -55,7 +136,7 @@
 - Nur Erzähler-Nachtlog: "Alter überlebt Wolfsangriff (X Leben übrig, geheim)"
 - Tagesabstimmung: stirbt sofort (normales Verhalten)
 
-## [2026-06-16 20:30] Händler implementiert
+## [2026-06-16] Händler implementiert
 
 - NIGHT_ORDER: Händler zwischen Seherin und Werwölfen eingetragen (select-one)
 - Nacht: Händler wählt einen Spieler; dieser wird als `g.haendler_away` gespeichert
@@ -67,34 +148,34 @@
 - Frontend: Away-Spieler sieht "Du bist heute einkaufen" statt Anklage-/Abstimmungs-UI
 - replacePlayerSocket: `g.haendler_away` wird bei Reconnect korrekt ersetzt
 
-## [2026-06-16 19:15] Seherin: acknowledged-Bug behoben
+## [2026-06-16] Seherin: acknowledged-Bug behoben
 
 - `processNightAction` view-Branch: ignoriert `{ acknowledged: true }` und leere targetId statt sie als neue Auswahl zu verarbeiten
 - Verhindert, dass ein zweites view-result mit leeren Werten an die Seherin gesendet wird
 
-## [2026-06-16 19:00] Auto-Fill: fehlende Karten mit Dorfbewohnern auffüllen
+## [2026-06-16] Auto-Fill: fehlende Karten mit Dorfbewohnern auffüllen
 
 - `start-game` und `restart-game` füllen `selectedCards` vor `pickBalanced` mit 'Dorfbewohner' auf wenn weniger Karten als Spieler
 - Werwolf-Pflicht bleibt: mindestens 1 Werwolf muss ausgewählt sein (sonst Fehlermeldung)
 - Lobby: Startbutton aktiv sobald ≥1 Wolf gewählt (nicht mehr an Kartenanzahl gebunden)
 - Lobby: Hinweistext "X fehlende Karten werden automatisch mit Dorfbewohnern aufgefüllt."
 
-## [2026-06-17 00:10] Wildes Kind implementiert
+## [2026-06-17] Wildes Kind implementiert
 - **server.js**: `wildesKind_idol` + `wildesKind_isWolf` im Spielzustand; `processNightAction` speichert Idol; `tryWildesKindTransform(code, room, deadId)` — wenn Idol stirbt: `wildesKind_isWolf = true`, `wildeskind-transform` an Spieler gesendet; aufgerufen in `startDay`, `endDay`, `hunter-shot`; `isWolf(room, id)` — zentraler Wolf-Check (WOLF_IDS + transformiertes Wildes Kind); `checkWinCondition` und `advanceNight` (kill/kill-wolf Target-Filter) nutzen `isWolf`; `startNight` fügt transformiertes Wildes Kind der Werwolf-Nachtrunde hinzu
 - **game.js**: `wildeskind-transform`-Event — zeigt Overlay "Dein Idol ist gestorben — du bist jetzt ein Werwolf", aktualisiert Fraktions-Label auf der Karte
 - **game.html**: `#wildeskind-overlay`
 - **game.css**: `.wildeskind-overlay` (z-index 80, düsterer Grün-Ton)
 
-## [2026-06-16 23:58] Ergebene Magd: Rollen-Reset bei Übernahme
+## [2026-06-16] Ergebene Magd: Rollen-Reset bei Übernahme
 - **server.js** `tryMagdTransform`: Wenn die Magd die Hexe übernimmt, werden `hexeUsedHeal` und `hexeUsedPoison` zurückgesetzt — sie hat beide Tränke frisch, unabhängig davon was die ursprüngliche Hexe verbraucht hat. (Alter, Glöckner, Gendarm: Reset folgt wenn diese Rollen implementiert werden.)
 
-## [2026-06-16 23:55] Ergebene Magd implementiert
+## [2026-06-16] Ergebene Magd implementiert
 - **server.js**: NIGHT_ORDER — neue erste Nacht-Karte "Ergebene Magd" (actionType: select-one); `magd_herr` im Spielzustand; `tryMagdTransform(code, room, deadId)` — wenn der Herr stirbt, übernimmt die lebende Magd automatisch seine Rolle, emittiert `magd-transform` an sie; aufgerufen in `startDay` (Nacht-Tote), `endDay` (Tag-Eliminierung, vor Gewinncheck), `hunter-shot`-Handler (Schuss-Opfer); `processNightAction` speichert `g.magd_herr`; `replacePlayerSocket` aktualisiert `g.magd_herr` bei Reconnect
 - **game.js**: `currentCardId` (veränderbar, für Rollen-Transformation); `openCardModal` nutzt `currentCardId` statt const `cardId`; `magd-transform`-Event — zeigt Overlay mit Herren-Name + neuer Rollenkarte, nach Bestätigung: Karte auf Hauptseite in-place aktualisiert
 - **game.html**: `#magd-overlay` mit Herren-Name, Rollenbild, Fraktionsanzeige, Bestätigungs-Button
 - **game.css**: `.magd-overlay` (z-index 80, goldener Akzent-Stil)
 
-## [2026-06-16 23:30] Jäger-Rolle implementiert
+## [2026-06-16] Jäger-Rolle implementiert
 - **server.js**: `findPlayerByRole(room, roleId)` — sucht Socket-ID per Rollenzuweisung
 - **server.js**: `phase-advance` (night-summary) — prüft ob Jäger in den Nacht-Toten ist; wenn ja: `morning-partial-reveal` (nur Jäger-Karte), Phase → `hunter-night-shot`, `hunter-shoot` an Jäger mit möglichen Zielen
 - **server.js**: `hunter-shot`-Handler — Jäger sendet Ziel; Nacht: `morning-full-reveal` + 2,5s → `startDay`; Tag: Gewinncheck, dann `day-result` mit `hunterShot`-Info
@@ -104,25 +185,25 @@
 - **game.html**: `#hunter-overlay` mit Ziel-Liste und "Erschießen"-Button
 - **game.css**: `.hunter-overlay` (z-index 80, über Morgen-Overlay), `.morning-deaths__hunter` für dramatischen Jäger-Text
 
-## [2026-06-16 22:15] Spielende: "Neue Karten" leitet zurück in die Lobby (selbe Spieler)
+## [2026-06-16] Spielende: "Neue Karten" leitet zurück in die Lobby (selbe Spieler)
 - **server.js**: `reset-to-lobby`-Event setzt Raum auf Lobby-Zustand zurück (Phase, Spieler-Ready, Karten-Anfragen); sendet jedem Spieler `back-to-lobby` mit Name, isHost, RaumCode; `rejoin-lobby`-Event reconnectet Spieler mit aktueller Socket-ID in bestehenden Raum
 - **lobby.js**: `rejoin`-URL-Param erkannt → emittiert `rejoin-lobby` statt `create-room`/`join-room`; Guard für Doppel-Join funktioniert weiterhin
 - **narrator.js/game.js**: `back-to-lobby`-Event leitet alle zu `/html/lobby.html?rejoin=CODE&name=NAME` weiter; Host bekommt zusätzlich `host=1`
 - **narrator.html**: Button "Neue Karten →" (war "Neue Lobby →")
 
-## [2026-06-16 22:00] Spielende: Neustart- und Neue-Lobby-Optionen
+## [2026-06-16] Spielende: Neustart- und Neue-Lobby-Optionen
 - **server.js**: `restart-game`-Event — neustart mit gleichen Karten (neu gemischt), selbe Spieler; `end-session`-Event — emittiert `session-ended` an alle und löscht den Raum
 - **narrator.html/js**: Nach Spielende zwei Buttons sichtbar: "Nochmal spielen" und "Neue Lobby →"; Bugfix: `updateButtons` zeigte "Nacht beginnt →" bei `game-over` (nun korrekt versteckt); `game-started`-Handler leitet Erzähler zur narrator.html weiter; `session-ended`-Handler leitet zur Startseite
 - **game.js**: `game-started`-Handler leitet Spieler zur game.html mit neuer Karte; `session-ended`-Handler leitet zur Startseite
 - **narrator.css**: `.game-over-actions` mit Einblend-Animation
 
-## [2026-06-16 21:30] Tagesrunde: Anklage + Abstimmung implementiert
+## [2026-06-16] Tagesrunde: Anklage + Abstimmung implementiert
 - **Lobby**: "Max. Anklagen"-Einstellung (Host only, Standard 3, 1–10) in Footer; `set-max-accusations`-Event
 - **server.js**: Neue Phasen `day-accusation` → `day-voting` → `day-result`; `startDay` ruft `startDayAccusation` auf; `day-vote`-Phase entfernt; neue Funktionen `startDayAccusation`, `processDayNominations`, `startDayVoting`, `processDayVotes`, `endDay`; neue Socket-Events `day-nominate`, `day-vote-cast`, `set-max-accusations`
 - **narrator.js/html**: PHASE_LABELS für neue Phasen; Anklage/Abstimmungs-Fortschritt in Phase-Karte; Tag-Ergebnis-Modal mit "Nächste Nacht →"
 - **game.js/html/css**: Tag-Panel (aus Boden hochfährt); Anklage-UI mit Spielerliste + Überspringen; Abstimmungs-UI mit Angeklagten-Liste + Bestätigen; Ergebnis-Text im Warte-Zustand; tote Spieler sehen kein Panel
 
-## [2026-06-16 21:00] Morgenbildschirm + Nacht-Zusammenfassung implementiert
+## [2026-06-16] Morgenbildschirm + Nacht-Zusammenfassung implementiert
 - `server.js` (`endNight`): sendet alle lebenden Spielernamen im `phase-changed night-summary`-Event
 - `server.js` (`phase-advance`): emittiert `morning-reveal` mit Todesliste, ruft `startDay` mit 2,5s Verzögerung auf
 - `narrator.js`: `narrator-update`-Handler öffnet nun das Zusammenfassungs-Modal wenn `phase === 'night-summary'` und `summary` vorhanden; totes `night-summary`-Handler entfernt
@@ -130,11 +211,11 @@
 - `game.css`: Stile für `.morning-overlay`, `.morning-grid`, `.morning-card` (Flip-Animation, Name, Todesmarkierung)
 - `game.js`: `phase-changed night-summary` zeigt Morgenbildschirm mit allen Karten (verdeckt); `morning-reveal` deckt tote Karten auf und zeigt Rollenbild; `phase-changed day-vote` blendet Morgenbildschirm aus
 
-## [2026-06-16 20:20] Bugfix: "Wartet auf: X" verrät aktiven Spieler entfernt
+## [2026-06-16] Bugfix: "Wartet auf: X" verrät aktiven Spieler entfernt
 - `game.js`: `night-waiting`-Handler zeigt kein `waitingFor` mehr — nur noch "Schließe deine Augen…"
 - `server.js`: `waitingFor`-Feld aus dem `night-waiting`-Emit entfernt
 
-## [2026-06-16 20:15] Bugfix: Aktive Rolle sieht Warteschirm + Karten-Peek-Button
+## [2026-06-16] Bugfix: Aktive Rolle sieht Warteschirm + Karten-Peek-Button
 
 ### Bugfix: Aktive Rolle sieht "Schließe deine Augen" statt ihrer Aktion
 - **Ursache**: `night-waiting` wurde per `io.to(code).emit(...)` an ALLE Spieler gesendet, auch den aktiven — das hat die kurz zuvor gesendete `your-night-turn`-Aktion überschrieben
@@ -146,7 +227,7 @@
 - `game.js`: Button öffnet dasselbe Info-Modal wie der normale ℹ-Button (Rollenname + Beschreibung); gemeinsame `openCardModal()`-Funktion
 - `game.css`: `.night-card-peek` — halbtransparenter Button, positioniert absolute oben-rechts
 
-## [2026-06-16 19:45] Bugfix: Erzähler-Seite zeigt "Verbindung zum Raum fehlt"
+## [2026-06-16] Bugfix: Erzähler-Seite zeigt "Verbindung zum Raum fehlt"
 
 ### Ursachen
 1. `lobby.js` `connect`-Handler rief bei Socket-Reconnects erneut `create-room` → neuer leerer Raum, original Raum verwaist
@@ -160,7 +241,7 @@
 - `narrator.js`: Liest `roomCode`/`playerId` aus URL-Params **oder** `sessionStorage`
 - `narrator.js` + `game.js`: `currentPlayerId` wird nach `resume-ok` auf aktuelle `socket.id` aktualisiert → Reconnects nutzen immer die zuletzt bekannte ID
 
-## [2026-06-16 19:15] Werwölfe: Mehrheitsvote-System implementiert
+## [2026-06-16] Werwölfe: Mehrheitsvote-System implementiert
 
 ### Backend (backend/server.js)
 - Neue Hilfsfunktionen: `getVoteCounts`, `getMajorityTarget`, `broadcastWolfVotes`
@@ -181,7 +262,7 @@
 - `game.html`: `#wolf-status` ergänzt
 - `game.css`: `.wolf-status`, `.vote-badge` ergänzt
 
-## [2026-06-16 18:45] Hexe: Toggle-Confirm-Flow implementiert
+## [2026-06-16] Hexe: Toggle-Confirm-Flow implementiert
 
 ### Frontend (frontend/js/game.js + game.html + game.css)
 - Hexe-UI umgebaut von "Klick = sofort" auf "Wählen → Bestätigen":
@@ -193,7 +274,7 @@
 - `game.css`: `.witch-btn--confirm`, `.witch-btn--heal.is-active`, `.witch-ui__actions` ergänzt
 - `game.js`: `witchConfirm`-Referenz + `nightState.witchHealSelected`/`witchPoisonTarget` in Reset initialisiert
 
-## [2026-06-16 18:15] Dorfmatratze vollständig implementiert + Hexe-Bugfixes
+## [2026-06-16] Dorfmatratze vollständig implementiert + Hexe-Bugfixes
 
 ### Backend (backend/server.js)
 - `NIGHT_ORDER`: Dorfmatratze vor Seherin verschoben (muss vor den Werwölfen wählen)
@@ -213,7 +294,7 @@
 - Hexe: Giftliste sendet `{ poisonTargetId: p.id }` statt `{ action: 'poison', targetId }`
 - Hexe: `witchHeal.hidden` und `witchPoison.hidden` reagieren auf `extra.canHeal` / `extra.canPoison`
 
-## [2026-06-16 17:30] Amor vollständig implementiert + Siegbedingungen
+## [2026-06-16] Amor vollständig implementiert + Siegbedingungen
 
 ### Backend (backend/server.js)
 - `endNight`: Liebespaar-Tod-Verkettung — stirbt ein Liebender in der Nacht, stirbt der andere mit (wird ins `pendingDeaths`-Set eingetragen, tritt erst zu Tagesbeginn in Kraft)
@@ -234,13 +315,13 @@
 ### Frontend – Erzählerseite (frontend/js/narrator.js)
 - `game-over`-Event: aktualisiert Phase-Karte auf "Spielende", blendet Weiter/Überspringen-Buttons aus
 
-## [2026-06-16 16:45] Spielseite: Rollenname und Tab-Titel versteckt wenn Karte verdeckt
+## [2026-06-16] Spielseite: Rollenname und Tab-Titel versteckt wenn Karte verdeckt
 - Karte startet jetzt face-down (Rückseite sichtbar), Knopf = "Karte zeigen"
 - Name und Fraktion unterhalb der Karte sind versteckt solange die Karte verdeckt ist
 - Browser-Tab zeigt "Deine Rolle – Werwolf" solange Karte verdeckt; erst nach Aufdecken den Rollennamen
 - Beim Zurückflip (Karte verdecken): Name/Fraktion wieder verstecken, Tab-Titel zurücksetzen
 
-## [2026-06-16 16:00] Karten: Mindestauswahl statt Exaktauswahl, Balance-Auto-Reduktion
+## [2026-06-16] Karten: Mindestauswahl statt Exaktauswahl, Balance-Auto-Reduktion
 - `server.js`: `n = players.length - (narratorMode ? 1 : 0)` — Erzähler korrekt rausgerechnet
 - `server.js`: Neue Funktion `pickBalanced(selectedCards, n)` — wählt zufällig genau `n` Karten aus der Auswahl; Werwölfe werden auf `floor(n/3)` gekappt, Rest wird mit zufälligen Dorfbewohnern aufgefüllt; gibt Fehlermeldung zurück falls unmöglich
 - `server.js`: `selectedCards.length !== n` → `< n` (Mindest- statt Exaktprüfung)
@@ -249,7 +330,7 @@
 - `lobby.js`: Warnung bei zu vielen Werwölfen zeigt jetzt Info statt Fehler: „X Werwölfe gewählt — zufällig werden Y davon genutzt"
 - `lobby.js`: `cardOk` prüft `>= needed` statt `=== needed`
 
-## [2026-06-16 15:30] Frontend nach Dateityp reorganisiert
+## [2026-06-16] Frontend nach Dateityp reorganisiert
 - `frontend/` aufgeteilt in drei Unterordner: `css/`, `js/`, `html/`
 - Alle 5 CSS-Dateien → `frontend/css/`
 - Alle 7 JS-Dateien → `frontend/js/` (imports auf `/js/roles.js` aktualisiert)
@@ -257,15 +338,15 @@
 - Seitenlinks in JS aktualisiert: `lobby.html` → `/html/lobby.html` etc.
 - `backend/server.js`: Root `/` leitet auf `/html/index.html` weiter
 
-## [2026-06-16 14:45] Bugfix: Spielleiter-Modus-Toggle für Mitspieler ausgeblendet
+## [2026-06-16] Bugfix: Spielleiter-Modus-Toggle für Mitspieler ausgeblendet
 - `lobby.css`: `.narrator-toggle[hidden] { display: none; }` ergänzt — `display: flex` in der Klasse überschrieb das HTML-`hidden`-Attribut für Nicht-Host-Spieler
 
-## [2026-06-16 14:30] Bugfix: Erzähler wird im Kartenzähler nicht mehr mitgezählt
+## [2026-06-16] Bugfix: Erzähler wird im Kartenzähler nicht mehr mitgezählt
 - `lobby.js renderCards`: `total` zieht 1 ab wenn `narratorMode` aktiv → Zähler zeigt z.B. 4 statt 5
 - `lobby.js updateFooter`: `needed = players.length - (narratorMode ? 1 : 0)` → "Spiel starten" wird erst aktiv wenn die richtige Anzahl Karten gewählt ist
 - `lobby.js updateFooter`: `allReady` prüft nur Nicht-Host-Spieler (`p.isHost || p.isReady`), da Host im Erzähler-Modus keinen Bereit-Status hat
 
-## [2026-06-16 14:00] Erzähler-Modus + Nacht-Spiellogik implementiert
+## [2026-06-16] Erzähler-Modus + Nacht-Spiellogik implementiert
 
 ### Backend (backend/server.js) – vollständige Überarbeitung
 - Phasensteuerung: `day-prep` → `night` → `night-summary` → `day-vote` → Schleife
@@ -301,12 +382,12 @@
 - Wolf-Abstimmungs-Update via `wolf-vote-update` in der Wartezeile sichtbar
 - Overlay versteckt sich bei `phase-changed` (Tag)
 
-## [2026-06-16 11:30] Bugfix: Spieler können jetzt alle Karten requesten (auch inaktive)
+## [2026-06-16] Bugfix: Spieler können jetzt alle Karten requesten (auch inaktive)
 - `lobby.js`: `is-clickable` gilt jetzt für alle Karten (nicht nur ausgewählte); inaktive Karten ohne eigenen Request bleiben visuell gedimmt, sind aber klickbar
 - `server.js`: Guard `!room.selectedCards.includes(cardId)` entfernt — Server akzeptiert Request auf jede Karte, nicht nur auf bereits ausgewählte
 
 
-## [2026-06-16 11:00] Vollständige Raum-Logik implementiert
+## [2026-06-16] Vollständige Raum-Logik implementiert
 
 ### Backend (backend/)
 - `package.json` erstellt (Node.js + Express + Socket.IO)
@@ -347,7 +428,7 @@ npm run dev     # Entwicklung (Node.js >= 18.11 für --watch)
 ```
 Dann: http://localhost:3000/
 
-## [2026-06-16 19:45] Seitenwechsel-Reconnect fuer laufende Spiele repariert
+## [2026-06-16] Seitenwechsel-Reconnect fuer laufende Spiele repariert
 - `backend/server.js`: `resume-game` Socket-Event ergaenzt; Spieler- und Erzaehler-Socket-IDs werden nach dem Wechsel von Lobby zu Spiel-/Erzaehlerseite ersetzt
 - Disconnects werden 15 Sekunden verzoegert entfernt, damit normale Seitenwechsel den Raum nicht sofort zerstoeren
 - Aktueller Spielzustand wird nach dem Reconnect erneut an Erzaehler oder Spieler gesendet

@@ -60,6 +60,88 @@ body {
 
 .lh__copy:hover { color: var(--accent); background: rgba(255,255,255,0.05); }
 
+.lh__qr {
+    background: none;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.45rem;
+    border-radius: 4px;
+    transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+.lh__qr:hover { color: var(--accent); border-color: rgba(200,170,110,0.5); background: rgba(255,255,255,0.05); }
+
+/* === QR Modal === */
+.qr-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.qr-modal[hidden] { display: none; }
+
+.qr-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(8,8,15,0.85);
+    cursor: pointer;
+}
+
+.qr-modal__box {
+    position: relative;
+    background: var(--bg-modal);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    min-width: 280px;
+}
+
+.qr-modal__title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+}
+
+.qr-modal__url {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    word-break: break-all;
+    text-align: center;
+    max-width: 240px;
+}
+
+.qr-modal__canvas {
+    background: #fff;
+    border-radius: 8px;
+    padding: 10px;
+    line-height: 0;
+}
+
+.qr-modal__close {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    padding: 0.4rem 1.2rem;
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition);
+}
+.qr-modal__close:hover { color: var(--text); background: rgba(255,255,255,0.1); }
+
 /* === Main 3-column grid === */
 .lobby {
     flex: 1;
@@ -138,6 +220,24 @@ body {
 }
 
 .player-item.is-ready .player-item__status { color: #60c070; }
+.player-item.is-narrator { border-color: rgba(100,160,220,0.35); }
+
+.pi-narrator, .pi-kick {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 0.1rem 0.3rem;
+    line-height: 1;
+    transition: color var(--transition), background var(--transition), border-color var(--transition);
+    flex-shrink: 0;
+}
+.pi-narrator { color: var(--text-muted); }
+.pi-narrator.is-active { color: #6aaee0; border-color: rgba(100,160,220,0.5); background: rgba(100,160,220,0.1); }
+.pi-narrator:hover { color: #6aaee0; border-color: rgba(100,160,220,0.4); }
+.pi-kick { color: var(--text-muted); margin-left: 2px; }
+.pi-kick:hover { color: #e05555; border-color: rgba(224,85,85,0.4); background: rgba(224,85,85,0.08); }
 
 /* === Card grid (cards column) === */
 .cards-header {

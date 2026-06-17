@@ -537,38 +537,98 @@ body.is-day .card-flip {
 .target-btn.is-selected::before { transform: scaleY(1); }
 
 /* ── Witch UI ───────────────────────────────────────────────────────────────── */
-.witch-ui { width: 100%; display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
+.witch-ui { width: 100%; display: flex; flex-direction: column; gap: 0.9rem; align-items: center; }
 .witch-ui[hidden] { display: none; }
 
 .witch-ui__victim {
     font-size: 0.88rem;
-    color: var(--text-muted);
-    padding: 0.55rem 1rem;
-    background: rgba(224,85,85,0.07);
-    border: 1px solid rgba(224,85,85,0.18);
-    border-radius: 8px;
-    width: 100%;
+    color: rgba(221,213,200,0.5);
     text-align: center;
+    font-style: italic;
+    letter-spacing: 0.01em;
 }
-.witch-ui__choices { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+
+/* Heal / Poison toggles: same language as target-btn, colour-tinted */
+.witch-ui__choices { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; width: 100%; }
+
 .witch-btn {
-    padding: 0.6rem 1.1rem;
-    border: 1px solid var(--border);
+    position: relative;
+    padding: 0.7rem 1.4rem;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.09);
     border-radius: 8px;
-    background: rgba(255,255,255,0.05);
-    color: var(--text);
+    cursor: pointer;
     font-family: var(--font-body);
     font-size: 0.88rem;
-    cursor: pointer;
-    transition: all 200ms ease;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    transition: color 180ms ease, border-color 180ms ease, background 180ms ease, transform 180ms ease;
+    overflow: hidden;
 }
-.witch-btn--heal:not([hidden])   { border-color: rgba(80,200,110,0.4); color: #65c878; }
-.witch-btn--poison:not([hidden]) { border-color: rgba(224,85,85,0.4);  color: #e08080; }
-.witch-btn--confirm              { border-color: rgba(100,150,220,0.4); color: #90b0e0; }
-.witch-btn--heal.is-active       { border-color: rgba(80,200,110,0.9); background: rgba(80,200,110,0.18); box-shadow: 0 0 12px rgba(80,200,110,0.2); }
-.witch-ui__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
-.witch-btn:hover { opacity: 0.82; transform: translateY(-1px); }
+.witch-btn::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    transform: scaleY(0);
+    transition: transform 200ms ease;
+    border-radius: 2px 0 0 2px;
+}
+.witch-btn:not([hidden]):hover { transform: translateX(2px); }
 .witch-btn[hidden] { display: none; }
+
+.witch-btn--heal:not([hidden]) { color: #72cc85; }
+.witch-btn--heal:not([hidden])::before { background: #72cc85; }
+.witch-btn--heal.is-active {
+    color: #72cc85;
+    border-color: rgba(80,200,110,0.45);
+    background: rgba(80,200,110,0.08);
+}
+.witch-btn--heal.is-active::before { transform: scaleY(1); }
+
+.witch-btn--poison:not([hidden]) { color: #e08585; }
+.witch-btn--poison:not([hidden])::before { background: #e08585; }
+.witch-btn--poison.is-active {
+    color: #e08585;
+    border-color: rgba(224,85,85,0.45);
+    background: rgba(224,85,85,0.08);
+}
+.witch-btn--poison.is-active::before { transform: scaleY(1); }
+
+/* Confirm / Pass row: mirrors night-confirm / secondary button style */
+.witch-ui__actions { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; width: 100%; }
+
+.witch-btn--confirm {
+    background: rgba(200,170,110,0.1);
+    border-color: rgba(200,170,110,0.35);
+    color: var(--accent);
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    letter-spacing: 0.07em;
+    padding: 0.65rem 1.8rem;
+}
+.witch-btn--confirm:hover {
+    background: rgba(200,170,110,0.18);
+    border-color: rgba(200,170,110,0.6);
+    transform: translateY(-1px);
+}
+.witch-btn--confirm::before { display: none; }
+
+.witch-btn--pass {
+    background: rgba(255,255,255,0.03);
+    border-color: rgba(255,255,255,0.07);
+    color: rgba(200,195,230,0.35);
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    letter-spacing: 0.07em;
+    padding: 0.65rem 1.8rem;
+}
+.witch-btn--pass:hover {
+    color: rgba(200,195,230,0.6);
+    border-color: rgba(255,255,255,0.14);
+    transform: translateY(-1px);
+}
+.witch-btn--pass::before { display: none; }
 
 /* ── Wolf vote ──────────────────────────────────────────────────────────────── */
 .wolf-status {
@@ -716,6 +776,21 @@ body.is-day .day-panel__eyebrow {
     align-items: center;
     width: 100%;
 }
+.day-panel__stats {
+    font-size: 0.78rem;
+    color: rgba(221,213,200,0.38);
+    text-align: center;
+    letter-spacing: 0.02em;
+    margin-bottom: 0.1rem;
+}
+.day-panel__stats[hidden] { display: none; }
+
+.day-btn--skip.is-confirming {
+    color: var(--accent);
+    border-color: rgba(200,170,110,0.45);
+    background: rgba(200,170,110,0.08);
+}
+
 .day-panel__wait-text {
     font-size: 0.88rem;
     color: rgba(221,213,200,0.38);
@@ -991,6 +1066,25 @@ body.is-day .day-btn--confirm {
     text-shadow: 0 2px 40px rgba(200,170,110,0.2);
 }
 
+.game-over-host-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 2rem;
+}
+.game-over-host-actions[hidden] { display: none; }
+.game-btn--go-restart {
+    background: rgba(200,170,110,0.1);
+    border-color: rgba(200,170,110,0.35);
+    color: var(--accent);
+}
+.game-btn--go-new {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.09);
+    color: var(--text-muted);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    TRANSFORM OVERLAYS (WildesKind, Jack, Ergebene Magd)
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -1115,4 +1209,87 @@ body.is-day .day-btn--confirm {
     color: #e07070;
     font-style: italic;
     animation: text-breathe 2s ease-in-out infinite;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   AUTO-PILOT UI
+   ══════════════════════════════════════════════════════════════════════════════ */
+.auto-mode-banner {
+    position: fixed;
+    top: 0.6rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(30,30,50,0.92);
+    border: 1px solid rgba(100,120,200,0.4);
+    border-radius: 20px;
+    padding: 0.25rem 0.9rem 0.25rem 0.65rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    z-index: 300;
+    backdrop-filter: blur(6px);
+    animation: banner-drop 0.4s ease both;
+}
+.auto-mode-banner[hidden] { display: none; }
+@keyframes banner-drop {
+    from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.auto-mode-banner__icon { font-size: 0.85rem; animation: spin 3s linear infinite; }
+.auto-mode-banner__text { font-size: 0.7rem; letter-spacing: 0.08em; color: rgba(160,180,240,0.9); }
+
+.auto-day-countdown {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8,8,15,0.75);
+    z-index: 90;
+    gap: 0.5rem;
+    pointer-events: none;
+}
+.auto-day-countdown[hidden] { display: none; }
+.auto-day-countdown__label {
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.auto-day-countdown__number {
+    font-family: var(--font-display);
+    font-size: 5rem;
+    font-weight: 900;
+    color: var(--accent);
+    line-height: 1;
+    text-shadow: 0 0 60px rgba(200,170,110,0.6);
+    animation: pulse-num 1s ease-in-out;
+}
+@keyframes pulse-num {
+    0%   { transform: scale(1.4); opacity: 0.5; }
+    60%  { transform: scale(1);   opacity: 1; }
+    100% { transform: scale(1);   opacity: 1; }
+}
+
+.auto-skip-warning {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(200,80,60,0.92);
+    border: 1px solid rgba(240,120,100,0.5);
+    border-radius: 10px;
+    padding: 0.5rem 1.2rem;
+    z-index: 90;
+    text-align: center;
+    animation: banner-drop 0.3s ease both;
+    backdrop-filter: blur(4px);
+}
+.auto-skip-warning[hidden] { display: none; }
+.auto-skip-warning__text {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0;
 }

@@ -44,6 +44,25 @@ const ROLE_NAMES = {
     JackTheRipper:'Jack the Ripper', Zigeunerin:'Zigeunerin', EinsamerWolf:'Einsamer Wolf',
 };
 
+// Status messages shown to non-active players during auto mode
+const AUTO_NIGHT_MSGS = {
+    'Dorfmatratze':   'Die Dorfmatratze sucht sich ein Bett für die Nacht…',
+    'Seherin':        'Die Seherin öffnet ihr geheimes Auge…',
+    'Händler':        'Ein Händler zieht durch das Dorf.',
+    'Werwölfe':       'Die Werwölfe heulen.',
+    'Hexe':           'Du hörst die Hexe lachen.',
+    'Amor':           'Vor deinem Fenster schlägt Amor mit den Flügeln.',
+    'Jäger':          'Der Jäger schleicht durch den Wald.',
+    'Einsamer Wolf':  'In der Ferne heult ein einsamer Wolf.',
+    'Silberschmied':  'Der Silberschmied hämmert leise in der Nacht.',
+    'Wildes Kind':    'Das wilde Kind schleicht durch das Dickicht.',
+    'Ergebene Magd':  'Eine treue Seele wacht über ihren Herrn.',
+    'Glöckner':       'In der Ferne läuten die Kirchenglocken.',
+    'Gendarm':        'Der Gendarm schleicht durchs Dorf.',
+    'Dieb':           'Ein Dieb schleicht durch das Haus.',
+    'Jack the Ripper':'Im Nebel schleicht eine dunkle Gestalt.',
+};
+
 // ── Room helpers ──────────────────────────────────────────────────────────────
 
 const rooms = new Map();
@@ -225,12 +244,67 @@ function broadcast(roomCode) {
     const room = rooms.get(roomCode);
     if (!room) return;
     io.to(roomCode).emit('room-updated', {
-        players:        room.players,
-        selectedCards:  room.selectedCards,
-        messages:       room.messages.slice(-80),
-        narratorMode:   room.narratorMode,
-        maxAccusations: room.maxAccusations ?? 3,
+        players:            room.players,
+        selectedCards:      room.selectedCards,
+        messages:           room.messages.slice(-80),
+        narratorMode:       room.narratorMode,
+        maxAccusations:     room.maxAccusations ?? 3,
+        designatedNarrator: room.designatedNarrator ?? null,
     });
+}
+
+// ── Auto-pilot helpers ────────────────────────────────────────────────────────
+
+function clearAutoTimers(g) {
+    if (g.autoTimer) { clearTimeout(g.autoTimer); g.autoTimer = null; }
+}
+
+function startAutoTurnTimer(code, room, playerIds) {
+    const g = room.game;
+    clearAutoTimers(g);
+    g.autoTimer = setTimeout(() => {
+        if (!room.game || !room.game.autoMode || room.game.phase !== 'night') return;
+        playerIds.forEach(pid => io.to(pid).emit('auto-skip-warning', { countdown: 10 }));
+        g.autoTimer = setTimeout(() => {
+            if (!room.game || !room.game.autoMode || room.game.phase !== 'night') return;
+            skipNight(code, room);
+        }, 10000);
+    }, 30000);
+}
+
+function doPhaseAdvance(code, room) {
+    const g = room.game;
+    if (!g) return;
+    if (g.phase === 'day-prep') {
+        startNight(code, room);
+    } else if (g.phase === 'night') {
+        advanceNight(code, room);
+    } else if (g.phase === 'night-summary') {
+        const deaths   = g.nightSummary?.deaths ?? [];
+        const jaegerId = findPlayerByRole(room, 'Jaeger');
+        const jaegerDied = jaegerId && deaths.some(d => d.id === jaegerId);
+        if (jaegerDied) {
+            const hunterDeath = deaths.find(d => d.id === jaegerId);
+            io.to(code).emit('morning-partial-reveal', { hunterDeath });
+            g.phase = 'hunter-night-shot';
+            const deadIds = new Set(deaths.map(d => d.id));
+            const shootTargets = [...g.alive]
+                .filter(id => id !== jaegerId && !deadIds.has(id))
+                .map(id => ({ id, name: playerName(room, id) }));
+            io.to(jaegerId).emit('hunter-shoot', { targets: shootTargets });
+            addEvent(g, `${playerName(room, jaegerId)} (Jäger) reißt jemanden mit in den Tod.`);
+            narratorPush(g, {
+                phase: 'hunter-night-shot', round: g.round,
+                hunterName: playerName(room, jaegerId),
+                events: g.events, players: playerStatusList(room, g),
+            });
+        } else {
+            io.to(code).emit('morning-reveal', { deaths });
+            setTimeout(() => startDay(code, room), 2500);
+        }
+    } else if (g.phase === 'day-result') {
+        startNight(code, room);
+    }
 }
 
 function shuffle(arr) {
@@ -511,7 +585,10 @@ function advanceNight(code, room) {
     io.to(code).emit('night-waiting', {
         activeGroup:   entry.group,
         activePlayers: entry.playerIds,
+        autoStatusMsg: g.autoMode ? (AUTO_NIGHT_MSGS[entry.group] ?? null) : null,
     });
+
+    if (g.autoMode) startAutoTurnTimer(code, room, entry.playerIds);
 
     // Update narrator
     narratorPush(g, {
@@ -569,6 +646,12 @@ function processNightAction(code, room, entry, actorId, payload) {
                     },
                     events: g.events, players: playerStatusList(room, g), waiting: false,
                 });
+                if (g.autoMode) {
+                    clearAutoTimers(g);
+                    g.autoTimer = setTimeout(() => {
+                        if (room.game?.phase === 'night') advanceNight(code, room);
+                    }, 800);
+                }
                 return false;
             }
         }
@@ -898,6 +981,13 @@ function endNight(code, room) {
         phase: 'night-summary', round: g.round,
         summary, events: g.events, players: playerStatusList(room, g),
     });
+
+    if (g.autoMode) {
+        clearAutoTimers(g);
+        g.autoTimer = setTimeout(() => {
+            if (room.game?.phase === 'night-summary') doPhaseAdvance(code, room);
+        }, 3500);
+    }
 }
 
 function isWolf(room, id) {
@@ -965,7 +1055,7 @@ function startDay(code, room) {
     if (win) {
         g.phase = 'game-over';
         addEvent(g, win.message);
-        io.to(code).emit('game-over', { winner: win.winner, message: win.message });
+        io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
         narratorPush(g, {
             phase: 'game-over', winner: win.winner, message: win.message,
             events: g.events, players: playerStatusList(room, g),
@@ -973,6 +1063,15 @@ function startDay(code, room) {
         return;
     }
 
+    if (g.autoMode) {
+        clearAutoTimers(g);
+        g.phase = 'day-prep';
+        io.to(code).emit('auto-day-starting', { countdown: 5 });
+        g.autoTimer = setTimeout(() => {
+            if (room.game?.phase === 'day-prep') startDayAccusation(code, room);
+        }, 5000);
+        return;
+    }
     startDayAccusation(code, room);
 }
 
@@ -1073,16 +1172,7 @@ function endDay(code, room, eliminatedId, skipped, narrSurvived = false) {
         tryWildesKindTransform(code, room, eliminatedId);
     }
 
-    const win = checkWinCondition(room);
-    if (win) {
-        g.phase = 'game-over';
-        addEvent(g, win.message);
-        io.to(code).emit('game-over', { winner: win.winner, message: win.message });
-        narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
-        return;
-    }
-
-    // Jäger reißt jemanden mit in den Tod (day death)
+    // Jäger shoots before win is checked — their shot could kill a wolf and reverse the outcome
     if (eliminatedId && room.assignments[eliminatedId] === 'Jaeger') {
         addEvent(g, `${playerName(room, eliminatedId)} (Jäger) reißt jemanden mit in den Tod.`);
         g.phase = 'hunter-day-shot';
@@ -1103,6 +1193,15 @@ function endDay(code, room, eliminatedId, skipped, narrSurvived = false) {
         return;
     }
 
+    const win = checkWinCondition(room);
+    if (win) {
+        g.phase = 'game-over';
+        addEvent(g, win.message);
+        io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
+        narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
+        return;
+    }
+
     g.phase = 'day-result';
     const eliminatedInfo = eliminatedId ? {
         id: eliminatedId,
@@ -1113,6 +1212,13 @@ function endDay(code, room, eliminatedId, skipped, narrSurvived = false) {
 
     io.to(code).emit('phase-changed', { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped, narrSurvived: !!narrSurvived });
     narratorPush(g, { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped, narrSurvived: !!narrSurvived, events: g.events, players: playerStatusList(room, g) });
+
+    if (g.autoMode) {
+        clearAutoTimers(g);
+        g.autoTimer = setTimeout(() => {
+            if (room.game?.phase === 'day-result') doPhaseAdvance(code, room);
+        }, 4000);
+    }
 }
 
 // ── Socket events ─────────────────────────────────────────────────────────────
@@ -1127,7 +1233,7 @@ io.on('connection', (socket) => {
         rooms.set(code, {
             hostId: socket.id, players: [host], selectedCards: [],
             messages: [], phase: 'lobby', narratorMode: false,
-            maxAccusations: 3,
+            maxAccusations: 3, designatedNarrator: null,
             disconnectTimers: new Map(),
         });
         socket.join(code);
@@ -1217,10 +1323,12 @@ io.on('connection', (socket) => {
         if (!ctx || ctx.room.hostId !== socket.id) return;
         const { code, room } = ctx;
 
-        const n = room.players.length - (room.narratorMode ? 1 : 0);
+        const narratorPlayerId = room.designatedNarrator ?? (room.narratorMode ? room.hostId : null);
+        const effectiveNarratorMode = !!narratorPlayerId;
+        const n = room.players.length - (effectiveNarratorMode ? 1 : 0);
         if (room.players.length < 3)           { socket.emit('error', { message: 'Mindestens 3 Spieler werden benötigt.' }); return; }
         if (!room.selectedCards.some(id => WOLF_IDS.has(id))) { socket.emit('error', { message: 'Mindestens 1 Werwolf muss ausgewählt sein.' }); return; }
-        if (!room.players.every(p => p.isReady)) { socket.emit('error', { message: 'Noch nicht alle Spieler sind bereit.' }); return; }
+        if (!room.players.every(p => p.isHost || p.isReady)) { socket.emit('error', { message: 'Noch nicht alle Spieler sind bereit.' }); return; }
 
         // Fehlende Karten mit Dorfbewohnern auffüllen
         const paddedCards = [...room.selectedCards];
@@ -1229,12 +1337,12 @@ io.on('connection', (socket) => {
         const picked = pickBalanced(paddedCards, n);
         if (typeof picked === 'string')        { socket.emit('error', { message: picked }); return; }
 
-        // Assign cards — honour requested cards only if they are in the picked set
+        // Assign cards — narrator (host or designated) gets no card
         const pool = [...picked];
         const assignments = {};
         const unassigned  = [];
         for (const p of room.players) {
-            if (room.narratorMode && p.isHost) continue; // narrator gets no card
+            if (p.id === narratorPlayerId) continue;
             const idx = (p.requestedCard && pool.includes(p.requestedCard)) ? pool.indexOf(p.requestedCard) : -1;
             if (idx !== -1) { assignments[p.id] = pool.splice(idx, 1)[0]; }
             else { unassigned.push(p.id); }
@@ -1248,7 +1356,9 @@ io.on('connection', (socket) => {
         room.game = {
             round:    1,
             phase:    'day-prep',
-            narratorId: room.narratorMode ? room.hostId : null,
+            narratorId: narratorPlayerId,
+            autoMode:   !narratorPlayerId,
+            autoTimer:  null,
             alive:    new Set(Object.keys(assignments)),
             events:   [],
             hexeUsedHeal:   false,
@@ -1290,17 +1400,28 @@ io.on('connection', (socket) => {
 
         io.to(code).emit('game-started', {
             assignments,
-            narratorMode: room.narratorMode,
-            narratorId:   room.game.narratorId,
+            narratorMode: effectiveNarratorMode,
+            narratorId:   narratorPlayerId,
         });
 
         // Send narrator their initial state
-        if (room.game.narratorId) {
-            io.to(room.game.narratorId).emit('narrator-update', {
+        if (narratorPlayerId) {
+            io.to(narratorPlayerId).emit('narrator-update', {
                 phase: 'day-prep', round: 1,
                 events:  room.game.events,
                 players: playerStatusList(room, room.game),
             });
+        }
+
+        // Auto mode: trigger first night automatically after players have loaded
+        if (!narratorPlayerId) {
+            setTimeout(() => {
+                if (!room.game || room.game.phase !== 'day-prep') return;
+                io.to(code).emit('auto-day-starting', { countdown: 5, label: 'Nacht beginnt in' });
+                room.game.autoTimer = setTimeout(() => {
+                    if (room.game?.phase === 'day-prep') startNight(code, room);
+                }, 5000);
+            }, 3000);
         }
     });
 
@@ -1308,9 +1429,11 @@ io.on('connection', (socket) => {
         const ctx = findRoomBySocket(socket.id);
         if (!ctx) return;
         const { code, room } = ctx;
-        if (!room.game || room.game.narratorId !== socket.id) return;
+        if (!room.game || ctx.room.hostId !== socket.id) return;
 
-        const n = room.players.length - (room.narratorMode ? 1 : 0);
+        const narratorPlayerId = room.designatedNarrator ?? (room.narratorMode ? room.hostId : null);
+        const effectiveNarratorMode = !!narratorPlayerId;
+        const n = room.players.length - (effectiveNarratorMode ? 1 : 0);
 
         // Fehlende Karten mit Dorfbewohnern auffüllen
         const paddedCards = [...room.selectedCards];
@@ -1323,7 +1446,7 @@ io.on('connection', (socket) => {
         shuffle(pool);
         const assignments = {};
         for (const p of room.players) {
-            if (room.narratorMode && p.isHost) continue;
+            if (p.id === narratorPlayerId) continue;
             assignments[p.id] = pool.pop();
         }
 
@@ -1331,7 +1454,9 @@ io.on('connection', (socket) => {
         room.game = {
             round:          1,
             phase:          'day-prep',
-            narratorId:     room.narratorMode ? room.hostId : null,
+            narratorId:     narratorPlayerId,
+            autoMode:       !narratorPlayerId,
+            autoTimer:      null,
             alive:          new Set(Object.keys(assignments)),
             events:         [],
             hexeUsedHeal:   false,
@@ -1373,15 +1498,25 @@ io.on('connection', (socket) => {
 
         io.to(code).emit('game-started', {
             assignments,
-            narratorMode: room.narratorMode,
-            narratorId:   room.game.narratorId,
+            narratorMode: effectiveNarratorMode,
+            narratorId:   narratorPlayerId,
         });
 
-        if (room.game.narratorId) {
-            io.to(room.game.narratorId).emit('narrator-update', {
+        if (narratorPlayerId) {
+            io.to(narratorPlayerId).emit('narrator-update', {
                 phase: 'day-prep', round: 1,
                 events: room.game.events, players: playerStatusList(room, room.game),
             });
+        }
+
+        if (!narratorPlayerId) {
+            setTimeout(() => {
+                if (!room.game || room.game.phase !== 'day-prep') return;
+                io.to(code).emit('auto-day-starting', { countdown: 5, label: 'Nacht beginnt in' });
+                room.game.autoTimer = setTimeout(() => {
+                    if (room.game?.phase === 'day-prep') startNight(code, room);
+                }, 5000);
+            }, 3000);
         }
     });
 
@@ -1389,11 +1524,13 @@ io.on('connection', (socket) => {
         const ctx = findRoomBySocket(socket.id);
         if (!ctx) return;
         const { code, room } = ctx;
-        if (!room.game || room.game.narratorId !== socket.id) return;
+        if (!room.game) return;
+        const isAuthorized = room.game.narratorId === socket.id || room.hostId === socket.id;
+        if (!isAuthorized) return;
 
         room.phase = 'lobby';
         room.game  = null;
-        room.players.forEach(p => { p.isReady = false; p.requestedCard = null; });
+        room.players.forEach(p => { p.isReady = p.isHost; p.requestedCard = null; });
 
         room.players.forEach(p => {
             io.to(p.id).emit('back-to-lobby', {
@@ -1444,38 +1581,27 @@ io.on('connection', (socket) => {
         const { code, room } = ctx;
         const g = room.game;
         if (!g || g.narratorId !== socket.id) return;
+        clearAutoTimers(g);
+        doPhaseAdvance(code, room);
+    });
 
-        if (g.phase === 'day-prep') {
-            startNight(code, room);
-        } else if (g.phase === 'night') {
-            advanceNight(code, room);
-        } else if (g.phase === 'night-summary') {
-            const deaths = g.nightSummary?.deaths ?? [];
-            const jaegerId = findPlayerByRole(room, 'Jaeger');
-            const jaegerDied = jaegerId && deaths.some(d => d.id === jaegerId);
+    socket.on('kick-player', ({ playerId }) => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx || ctx.room.hostId !== socket.id) return;
+        const { code, room } = ctx;
+        if (room.phase !== 'lobby') return;
+        room.players = room.players.filter(p => p.id !== playerId);
+        if (room.designatedNarrator === playerId) room.designatedNarrator = null;
+        io.to(playerId).emit('you-were-kicked');
+        broadcast(code);
+    });
 
-            if (jaegerDied) {
-                const hunterDeath = deaths.find(d => d.id === jaegerId);
-                io.to(code).emit('morning-partial-reveal', { hunterDeath });
-                g.phase = 'hunter-night-shot';
-                const deadIds = new Set(deaths.map(d => d.id));
-                const shootTargets = [...g.alive]
-                    .filter(id => id !== jaegerId && !deadIds.has(id))
-                    .map(id => ({ id, name: playerName(room, id) }));
-                io.to(jaegerId).emit('hunter-shoot', { targets: shootTargets });
-                addEvent(g, `${playerName(room, jaegerId)} (Jäger) reißt jemanden mit in den Tod.`);
-                narratorPush(g, {
-                    phase: 'hunter-night-shot', round: g.round,
-                    hunterName: playerName(room, jaegerId),
-                    events: g.events, players: playerStatusList(room, g),
-                });
-            } else {
-                io.to(code).emit('morning-reveal', { deaths });
-                setTimeout(() => startDay(code, room), 2500);
-            }
-        } else if (g.phase === 'day-result') {
-            startNight(code, room);
-        }
+    socket.on('set-narrator-player', ({ playerId }) => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx || ctx.room.hostId !== socket.id) return;
+        ctx.room.designatedNarrator = playerId || null;
+        if (playerId) ctx.room.narratorMode = true;
+        broadcast(ctx.code);
     });
 
     socket.on('set-max-accusations', ({ value }) => {
@@ -1505,10 +1631,17 @@ io.on('connection', (socket) => {
         const nominations = Object.values(g.dayNominations);
         const tally = {};
         for (const nid of nominations) { if (nid) tally[nid] = (tally[nid] ?? 0) + 1; }
+        const skipCount = nominations.filter(v => v === null).length;
         narratorPush(g, {
             phase: 'day-accusation', round: g.round,
-            progress: { nominated: nominations.length, total: g.alive.size, skipped: nominations.filter(v => v === null).length, tally },
+            progress: { nominated: nominations.length, total: g.alive.size, skipped: skipCount, tally },
             players: playerStatusList(room, g), events: g.events,
+        });
+        io.to(code).emit('day-accusation-update', {
+            tally,
+            skipCount,
+            totalResponded: nominations.length,
+            total: g.alive.size,
         });
 
         if (nominations.length >= g.alive.size) processDayNominations(code, room);
@@ -1579,7 +1712,7 @@ io.on('connection', (socket) => {
             if (win) {
                 g.phase = 'game-over';
                 addEvent(g, win.message);
-                io.to(code).emit('game-over', { winner: win.winner, message: win.message });
+                io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
                 narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
                 return;
             }
@@ -1625,7 +1758,15 @@ io.on('connection', (socket) => {
         if (!entry || !entry.playerIds.includes(socket.id)) return;
 
         const sendDone = processNightAction(code, room, entry, socket.id, payload);
-        if (sendDone) io.to(socket.id).emit('night-turn-done');
+        if (sendDone) {
+            io.to(socket.id).emit('night-turn-done');
+            if (g.autoMode) {
+                clearAutoTimers(g);
+                g.autoTimer = setTimeout(() => {
+                    if (room.game?.phase === 'night') advanceNight(code, room);
+                }, 800);
+            }
+        }
     });
 
     // ─ Spectator ──────────────────────────────────────────────────────────────
@@ -1648,6 +1789,7 @@ io.on('connection', (socket) => {
 
         if (!room.disconnectTimers) room.disconnectTimers = new Map();
         const timer = setTimeout(() => {
+            const wasNarrator = room.game && room.game.narratorId === socket.id;
             room.players = room.players.filter(p => p.id !== socket.id);
             if (room.players.length === 0) { rooms.delete(code); return; }
             if (room.hostId === socket.id) {
@@ -1655,6 +1797,43 @@ io.on('connection', (socket) => {
                 room.hostId = room.players[0].id;
             }
             room.disconnectTimers.delete(socket.id);
+
+            if (wasNarrator && room.game) {
+                const g = room.game;
+                g.narratorId = null;
+                g.autoMode   = true;
+                clearAutoTimers(g);
+                io.to(code).emit('auto-mode-activated', {
+                    message: 'Der Erzähler hat das Spiel verlassen. Automatischer Modus aktiviert.',
+                });
+                setTimeout(() => {
+                    if (!room.game) return;
+                    if (g.phase === 'day-prep') {
+                        io.to(code).emit('auto-day-starting', { countdown: 5 });
+                        g.autoTimer = setTimeout(() => {
+                            if (room.game?.phase === 'day-prep') startNight(code, room);
+                        }, 5000);
+                    } else if (g.phase === 'night') {
+                        const entry = g.nightQueue[g.nightIdx];
+                        if (entry && !entry.done) {
+                            startAutoTurnTimer(code, room, entry.playerIds);
+                        } else {
+                            g.autoTimer = setTimeout(() => {
+                                if (room.game?.phase === 'night') advanceNight(code, room);
+                            }, 1000);
+                        }
+                    } else if (g.phase === 'night-summary') {
+                        g.autoTimer = setTimeout(() => {
+                            if (room.game?.phase === 'night-summary') doPhaseAdvance(code, room);
+                        }, 2000);
+                    } else if (g.phase === 'day-result') {
+                        g.autoTimer = setTimeout(() => {
+                            if (room.game?.phase === 'day-result') doPhaseAdvance(code, room);
+                        }, 2000);
+                    }
+                }, 1500);
+            }
+
             broadcast(code);
         }, 15000);
 

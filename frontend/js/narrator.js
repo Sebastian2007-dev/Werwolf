@@ -113,6 +113,15 @@ socket.on('session-ended', () => {
     window.location.href = '/';
 });
 
+socket.on('auto-mode-activated', ({ message }) => {
+    advanceBtn.hidden = true;
+    skipBtn.hidden    = true;
+    const banner = document.createElement('p');
+    banner.className = 'narrator-auto-banner';
+    banner.textContent = message;
+    document.querySelector('.narrator-header')?.appendChild(banner);
+});
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function updateHeader(phase, round) {
     const [eyebrow] = PHASE_LABELS[phase] ?? ['—'];

@@ -19,6 +19,7 @@
             <span class="lh__label">Raum</span>
             <span class="lh__code" id="room-code-display">——</span>
             <button class="lh__copy" id="copy-btn" title="Code kopieren">&#10697;</button>
+            <button class="lh__qr" id="qr-btn" title="QR-Code anzeigen">QR</button>
         </div>
     </header>
 
@@ -75,6 +76,17 @@
         </div>
     </footer>
 
+    <!-- QR-Code Modal -->
+    <div class="qr-modal" id="qr-modal" hidden>
+        <div class="qr-modal__backdrop" id="qr-backdrop"></div>
+        <div class="qr-modal__box">
+            <p class="qr-modal__title">Spiel beitreten</p>
+            <p class="qr-modal__url" id="qr-url"></p>
+            <div class="qr-modal__canvas" id="qr-canvas"></div>
+            <button class="qr-modal__close" id="qr-close">Schlie&szlig;en</button>
+        </div>
+    </div>
+
     <!-- Connecting / error overlay -->
     <div class="overlay" id="overlay">
         <div class="overlay__box">
@@ -91,6 +103,7 @@
     </button>
     <div class="chat-backdrop" id="chat-backdrop"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="/js/lobby.js" type="module"></script>
 </body>

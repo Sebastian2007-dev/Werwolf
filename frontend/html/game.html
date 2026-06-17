@@ -69,6 +69,10 @@
         <div class="game-over-box">
             <p class="game-over-box__eyebrow" id="game-over-winner"></p>
             <h2 class="game-over-box__title" id="game-over-message"></h2>
+            <div class="game-over-host-actions" id="game-over-host-actions" hidden>
+                <button class="game-btn game-btn--go-restart" id="go-restart-same-btn">Nochmal spielen &#x21BA;</button>
+                <button class="game-btn game-btn--go-new" id="go-restart-new-btn">Neue Karten &#x2192;</button>
+            </div>
         </div>
     </div>
 
@@ -88,6 +92,7 @@
         <div id="day-accusation-ui">
             <p class="day-panel__eyebrow">Anklage-Phase</p>
             <p class="day-panel__hint" id="day-accusation-hint">W&auml;hle jemanden aus oder &uuml;berspringe die Runde.</p>
+            <p class="day-panel__stats" id="day-accusation-stats" hidden></p>
             <div class="target-list" id="day-target-list"></div>
             <div class="day-panel__actions">
                 <button class="day-btn day-btn--confirm" id="day-accuse-btn" hidden>Anklagen &#10003;</button>
@@ -153,6 +158,23 @@
         <p class="hunter-overlay__hint">Du musst jemanden w&auml;hlen &mdash; kein &Uuml;berspringen.</p>
         <div class="target-list" id="hunter-target-list"></div>
         <button class="night-confirm" id="hunter-confirm" hidden>Erschie&szlig;en &#10003;</button>
+    </div>
+
+    <!-- Auto mode banner: shown when narrator leaves and auto-pilot activates -->
+    <div class="auto-mode-banner" id="auto-mode-banner" hidden>
+        <span class="auto-mode-banner__icon">&#9881;</span>
+        <span class="auto-mode-banner__text">Automatischer Modus</span>
+    </div>
+
+    <!-- Auto day countdown: shown between morning reveal and accusation phase -->
+    <div class="auto-day-countdown" id="auto-day-countdown" hidden>
+        <p class="auto-day-countdown__label" id="auto-day-label">Beginnt in</p>
+        <p class="auto-day-countdown__number" id="auto-day-number">5</p>
+    </div>
+
+    <!-- Auto skip warning: shown to the active player who hasn't acted -->
+    <div class="auto-skip-warning" id="auto-skip-warning" hidden>
+        <p class="auto-skip-warning__text">Dein Zug wird in <span id="auto-skip-seconds">10</span>s übersprungen!</p>
     </div>
 
     <!-- Night overlay: shown during night phase -->

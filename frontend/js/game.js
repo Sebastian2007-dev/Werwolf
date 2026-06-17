@@ -90,9 +90,12 @@ katzMausRecallBtn.addEventListener('click', () => {
     katzMausPanel.hidden = !katzMausPanel.hidden;
 });
 
-const gameOverOverlay = document.getElementById('game-over-overlay');
-const gameOverWinner  = document.getElementById('game-over-winner');
-const gameOverMessage = document.getElementById('game-over-message');
+const gameOverOverlay      = document.getElementById('game-over-overlay');
+const gameOverWinner       = document.getElementById('game-over-winner');
+const gameOverMessage      = document.getElementById('game-over-message');
+const gameOverHostActions  = document.getElementById('game-over-host-actions');
+const goRestartSameBtn     = document.getElementById('go-restart-same-btn');
+const goRestartNewBtn      = document.getElementById('go-restart-new-btn');
 
 // ── Spectator / dead player ────────────────────────────────────────────────────
 const cardScene      = document.getElementById('card-scene');
@@ -138,6 +141,8 @@ const dayWaitText       = document.getElementById('day-wait-text');
 
 let daySelectedId = null;
 let dayAlive = false;
+let skipConfirmPending = false;
+let skipConfirmTimer   = null;
 
 // ── Morning overlay refs ──────────────────────────────────────────────────────
 const morningOverlay  = document.getElementById('morning-overlay');
@@ -415,17 +420,18 @@ socket.on('wolf-vote-update', ({ voteCounts, majorityTarget, majorityTargetName,
 });
 
 // Not our turn: show wait screen (skip if we are the active player)
-socket.on('night-waiting', ({ activePlayers }) => {
+socket.on('night-waiting', ({ activePlayers, autoStatusMsg }) => {
     if (isDead) return;
     if (activePlayers?.includes(socket.id)) return;
     showOverlay();
-    showWait('');
+    showWait(autoStatusMsg ?? '');
 });
 
 // Our turn is done (server moved on)
 socket.on('night-turn-done', () => {
-    if (isDead) return;
-    showWait('Gut gemacht. Warte auf die anderen…');
+    if (!isDead) showWait('Gut gemacht. Warte auf die anderen…');
+    autoSkipWarning.hidden = true;
+    if (autoSkipInterval) { clearInterval(autoSkipInterval); autoSkipInterval = null; }
 });
 
 // Phase transitions
@@ -492,12 +498,53 @@ socket.on('day-vote-update', ({ totalVoted, totalVoters }) => {
     }
 });
 
+// Live nomination tally during accusation phase
+socket.on('day-accusation-update', ({ tally, skipCount, totalResponded, total }) => {
+    // Update vote badges on target buttons (visible to players still choosing)
+    dayTargetList.querySelectorAll('.target-btn').forEach(btn => {
+        const tid = btn.dataset.id;
+        const count = tally[tid] ?? 0;
+        let badge = btn.querySelector('.vote-badge');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'vote-badge';
+            btn.appendChild(badge);
+        }
+        badge.textContent = count;
+        badge.hidden = count === 0;
+    });
+
+    // Update stats line
+    const statsEl = document.getElementById('day-accusation-stats');
+    if (statsEl && totalResponded > 0) {
+        const parts = [`${totalResponded}/${total} reagiert`];
+        if (skipCount > 0) parts.push(`${skipCount} überspringen`);
+        statsEl.textContent = parts.join(' · ');
+        statsEl.hidden = false;
+    }
+
+    // Also update wait text for players who already submitted
+    if (dayWaitUi.hidden === false) {
+        dayWaitText.textContent = `${totalResponded} von ${total} Spielern haben reagiert…`;
+    }
+});
+
 // Confirmed: submitted nomination or vote
 socket.on('day-nomination-done', () => { showDayWait(); });
 socket.on('day-vote-done', () => { showDayWait(); });
 
+function resetSkipConfirm() {
+    if (skipConfirmTimer) { clearTimeout(skipConfirmTimer); skipConfirmTimer = null; }
+    skipConfirmPending = false;
+    daySkipBtn.textContent = 'Überspringen';
+    daySkipBtn.classList.remove('is-confirming');
+}
+
 function showDayAccusation(players, maxAccusations) {
     daySelectedId = null;
+    resetSkipConfirm();
+    const statsEl = document.getElementById('day-accusation-stats');
+    if (statsEl) { statsEl.hidden = true; statsEl.textContent = ''; }
     dayPanel.hidden = false;
     dayAccusationUi.hidden = false;
     dayVotingUi.hidden = true;
@@ -507,12 +554,13 @@ function showDayAccusation(players, maxAccusations) {
     const targets = players.filter(p => p.id !== currentPlayerId);
     dayTargetList.innerHTML = '';
     buildTargetButtons(dayTargetList, targets, (p, btn) => {
+        resetSkipConfirm();
         dayTargetList.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
         btn.classList.add('is-selected');
         daySelectedId = p.id;
         dayAccuseBtn.hidden = false;
         dayAccuseBtn.classList.remove('confirm-pop');
-        void dayAccuseBtn.offsetWidth; // reflow to restart animation
+        void dayAccuseBtn.offsetWidth;
         dayAccuseBtn.classList.add('confirm-pop');
         dayAccuseBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
@@ -523,7 +571,15 @@ function showDayAccusation(players, maxAccusations) {
     };
 
     daySkipBtn.onclick = () => {
-        socket.emit('day-nominate', { targetId: null });
+        if (!skipConfirmPending) {
+            skipConfirmPending = true;
+            daySkipBtn.textContent = 'Wirklich überspringen?';
+            daySkipBtn.classList.add('is-confirming');
+            skipConfirmTimer = setTimeout(resetSkipConfirm, 3000);
+        } else {
+            resetSkipConfirm();
+            socket.emit('day-nominate', { targetId: null });
+        }
     };
 }
 
@@ -830,8 +886,59 @@ socket.on('session-ended', () => {
     window.location.href = '/';
 });
 
+// ── Auto-pilot events ─────────────────────────────────────────────────────────
+const autoModeBanner   = document.getElementById('auto-mode-banner');
+const autoDayCountdown = document.getElementById('auto-day-countdown');
+const autoDayNumber    = document.getElementById('auto-day-number');
+const autoSkipWarning  = document.getElementById('auto-skip-warning');
+const autoSkipSeconds  = document.getElementById('auto-skip-seconds');
+let   autoSkipInterval = null;
+
+socket.on('auto-mode-activated', () => {
+    autoModeBanner.hidden = false;
+});
+
+socket.on('auto-day-starting', ({ countdown, label }) => {
+    document.getElementById('auto-day-label').textContent = label ?? 'Tag beginnt in';
+    autoDayNumber.textContent = countdown;
+    autoDayCountdown.hidden   = false;
+    autoDayCountdown.querySelector('.auto-day-countdown__number').classList.remove('pulse-num');
+    void autoDayCountdown.querySelector('.auto-day-countdown__number').offsetWidth;
+    autoDayCountdown.querySelector('.auto-day-countdown__number').style.animation = 'none';
+
+    let remaining = countdown;
+    const tick = () => {
+        remaining--;
+        autoDayNumber.textContent = remaining;
+        autoDayNumber.style.animation = 'none';
+        void autoDayNumber.offsetWidth;
+        autoDayNumber.style.animation = 'pulse-num 1s ease-in-out';
+        if (remaining <= 0) {
+            autoDayCountdown.hidden = true;
+        }
+    };
+    const iv = setInterval(() => { tick(); if (remaining <= 0) clearInterval(iv); }, 1000);
+});
+
+socket.on('auto-skip-warning', ({ countdown }) => {
+    if (isDead) return;
+    autoSkipSeconds.textContent = countdown;
+    autoSkipWarning.hidden = false;
+    let remaining = countdown;
+    if (autoSkipInterval) clearInterval(autoSkipInterval);
+    autoSkipInterval = setInterval(() => {
+        remaining--;
+        autoSkipSeconds.textContent = remaining;
+        if (remaining <= 0) {
+            clearInterval(autoSkipInterval);
+            autoSkipWarning.hidden = true;
+        }
+    }, 1000);
+});
+
+
 // Game over
-socket.on('game-over', ({ winner, message }) => {
+socket.on('game-over', ({ winner, message, hostId }) => {
     hideOverlay();
     if (winner === 'everyone-dead') {
         gameOverWinner.textContent  = '';
@@ -844,4 +951,18 @@ socket.on('game-over', ({ winner, message }) => {
     gameOverWinner.textContent  = labels[winner] ?? winner;
     gameOverMessage.textContent = message;
     gameOverOverlay.hidden = false;
+
+    if (hostId && hostId === socket.id) {
+        gameOverHostActions.hidden = false;
+    }
+});
+
+goRestartSameBtn.addEventListener('click', () => {
+    gameOverHostActions.hidden = true;
+    socket.emit('restart-game');
+});
+
+goRestartNewBtn.addEventListener('click', () => {
+    gameOverHostActions.hidden = true;
+    socket.emit('reset-to-lobby');
 });

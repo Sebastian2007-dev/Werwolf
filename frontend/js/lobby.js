@@ -16,16 +16,22 @@ let myId        = null;
 let currentRoom = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
-const overlay       = document.getElementById('overlay');
-const overlayMsg    = document.getElementById('overlay-msg');
-const overlayBack   = document.getElementById('overlay-back');
-const codeDisplay   = document.getElementById('room-code-display');
-const copyBtn       = document.getElementById('copy-btn');
-const playerList    = document.getElementById('player-list');
-const playerCount   = document.getElementById('player-count');
-const cardGrid      = document.getElementById('card-grid');
-const cardCounter   = document.getElementById('card-counter');
-const balanceWarn   = document.getElementById('balance-warning');
+const overlay               = document.getElementById('overlay');
+const overlayMsg            = document.getElementById('overlay-msg');
+const overlayBack           = document.getElementById('overlay-back');
+const codeDisplay           = document.getElementById('room-code-display');
+const copyBtn               = document.getElementById('copy-btn');
+const qrBtn                 = document.getElementById('qr-btn');
+const qrModal               = document.getElementById('qr-modal');
+const qrBackdrop            = document.getElementById('qr-backdrop');
+const qrClose               = document.getElementById('qr-close');
+const qrCanvas              = document.getElementById('qr-canvas');
+const qrUrl                 = document.getElementById('qr-url');
+const playerList            = document.getElementById('player-list');
+const playerCount           = document.getElementById('player-count');
+const cardGrid              = document.getElementById('card-grid');
+const cardCounter           = document.getElementById('card-counter');
+const balanceWarn           = document.getElementById('balance-warning');
 const readyBtn              = document.getElementById('ready-btn');
 const startBtn              = document.getElementById('start-btn');
 const narratorToggle        = document.getElementById('narrator-toggle');
@@ -62,6 +68,9 @@ socket.on('connect', () => {
     lobbyJoined = true;
     if (rejoinCode) {
         socket.emit('rejoin-lobby', { roomCode: rejoinCode, playerName: myName });
+    } else if (isHost && roomCode) {
+        // Host reloaded — reconnect to existing room
+        socket.emit('rejoin-lobby', { roomCode, playerName: myName });
     } else if (isHost) {
         socket.emit('create-room', { hostName: myName });
     } else {
@@ -77,6 +86,10 @@ socket.on('room-created', ({ roomCode: code }) => {
     startBtn.hidden = false;
     narratorToggle.hidden = false;
     accusationsSetting.hidden = false;
+    // Persist code in URL so a page reload rejoins the same room
+    const url = new URL(window.location.href);
+    url.searchParams.set('code', code);
+    history.replaceState(null, '', url);
 });
 
 socket.on('room-joined', ({ roomCode: code }) => {
@@ -96,8 +109,19 @@ socket.on('room-updated', (room) => {
     }
 });
 
-socket.on('join-error', ({ message }) => showError(message));
+socket.on('join-error', ({ message }) => {
+    // Host reloaded but server was restarted — create a fresh room
+    if (isHost && roomCode) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('code');
+        history.replaceState(null, '', url);
+        socket.emit('create-room', { hostName: myName });
+        return;
+    }
+    showError(message);
+});
 socket.on('error', ({ message }) => { lobbyError.textContent = message; });
+socket.on('you-were-kicked', () => { window.location.href = '/'; });
 
 socket.on('game-started', ({ assignments, narratorMode }) => {
     const code = codeDisplay.textContent;
@@ -118,17 +142,33 @@ socket.on('game-started', ({ assignments, narratorMode }) => {
 // ── Render: Players ───────────────────────────────────────────────────────────
 function renderPlayers(players) {
     playerCount.textContent = `(${players.length})`;
+    const designatedNarrator = currentRoom?.designatedNarrator;
     playerList.innerHTML = players.map(p => {
         const isMe  = p.id === myId;
         const reqRole = p.requestedCard ? ROLES.find(r => r.id === p.requestedCard) : null;
+        const isDesNarrator = p.id === designatedNarrator;
+        const hostActions = (isHost && !isMe && !p.isHost) ? `
+            <button class="pi-narrator${isDesNarrator ? ' is-active' : ''}" data-id="${p.id}" title="${isDesNarrator ? 'Erzähler-Rolle entfernen' : 'Als Erzähler festlegen'}">&#128214;</button>
+            <button class="pi-kick" data-id="${p.id}" title="Spieler kicken">&#x2715;</button>` : '';
         return `
-        <li class="player-item${p.isReady ? ' is-ready' : ''}${isMe ? ' is-me' : ''}">
+        <li class="player-item${p.isReady ? ' is-ready' : ''}${isMe ? ' is-me' : ''}${isDesNarrator ? ' is-narrator' : ''}">
             ${p.isHost ? '<span class="player-item__crown" title="Spielleiter">&#9812;</span>' : ''}
-            <span class="player-item__name">${h(p.name)}${isMe ? ' <em style="opacity:.5;font-style:normal">(du)</em>' : ''}</span>
+            <span class="player-item__name">${h(p.name)}${isMe ? ' <em style="opacity:.5;font-style:normal">(du)</em>' : ''}${isDesNarrator ? ' <em style="opacity:.6;font-style:normal">(Erzähler)</em>' : ''}</span>
             ${reqRole ? `<span class="player-item__request">${h(reqRole.name)}</span>` : ''}
             ${!p.isHost ? `<span class="player-item__status">${p.isReady ? '&#10003;' : '&hellip;'}</span>` : ''}
+            ${hostActions}
         </li>`;
     }).join('');
+
+    playerList.querySelectorAll('.pi-kick').forEach(btn => {
+        btn.addEventListener('click', () => socket.emit('kick-player', { playerId: btn.dataset.id }));
+    });
+    playerList.querySelectorAll('.pi-narrator').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            socket.emit('set-narrator-player', { playerId: designatedNarrator === id ? null : id });
+        });
+    });
 }
 
 // ── Render: Cards ─────────────────────────────────────────────────────────────
@@ -286,11 +326,53 @@ chatToggle.addEventListener('click', () => {
 chatBackdrop.addEventListener('click', closeChat);
 
 copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(codeDisplay.textContent).then(() => {
+    const code = codeDisplay.textContent;
+    const onSuccess = () => {
         copyBtn.textContent = '✓';
         setTimeout(() => { copyBtn.innerHTML = '&#10697;'; }, 1500);
-    });
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(code).then(onSuccess);
+    } else {
+        const ta = document.createElement('textarea');
+        ta.value = code;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        onSuccess();
+    }
 });
+
+// QR-Code
+let qrInstance = null;
+
+function openQrModal() {
+    const code = codeDisplay.textContent.trim();
+    const joinUrl = `${window.location.origin}/html/join.html?code=${code}`;
+    qrUrl.textContent = joinUrl;
+    qrCanvas.innerHTML = '';
+    qrInstance = new QRCode(qrCanvas, {
+        text: joinUrl,
+        width: 220,
+        height: 220,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+    });
+    qrModal.hidden = false;
+}
+
+function closeQrModal() {
+    qrModal.hidden = true;
+}
+
+qrBtn.addEventListener('click', openQrModal);
+qrClose.addEventListener('click', closeQrModal);
+qrBackdrop.addEventListener('click', closeQrModal);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeQrModal(); });
 
 // Max accusations setting
 function emitAccusations() {
