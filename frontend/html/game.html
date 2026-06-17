@@ -229,6 +229,29 @@
 
     </div>
 
+    <!-- Floating game-chat toggle -->
+    <button class="gchat-toggle" id="gchat-toggle" aria-label="Chat" hidden>
+        &#x1F4AC;
+        <span class="gchat-badge" id="gchat-badge" hidden>0</span>
+    </button>
+
+    <!-- Game chat panel (full-screen overlay) -->
+    <div class="gchat-panel" id="gchat-panel" hidden>
+        <div class="gchat-panel__header">
+            <div class="gchat-tabs">
+                <button class="gchat-tab is-active" data-tab="village">Dorf</button>
+                <button class="gchat-tab" data-tab="wolf" id="gchat-wolf-tab" hidden>Rudel &#x1F43A;</button>
+            </div>
+            <button class="gchat-panel__close" id="gchat-close">&#x2715;</button>
+        </div>
+        <div class="gchat-log" id="gchat-log-village"><p class="gchat-empty">Noch keine Nachrichten.</p></div>
+        <div class="gchat-log" id="gchat-log-wolf" hidden><p class="gchat-empty">Noch keine Nachrichten im Rudel.</p></div>
+        <div class="gchat-panel__footer">
+            <input class="gchat-input" id="gchat-input" type="text" placeholder="Nachricht…" maxlength="300" autocomplete="off">
+            <button class="gchat-send-btn" id="gchat-send">&#x25B6;</button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script src="/js/game.js" type="module"></script>
 </body>

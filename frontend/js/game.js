@@ -436,6 +436,7 @@ socket.on('night-turn-done', () => {
 
 // Phase transitions
 socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived }) => {
+    gchatOnPhase(phase);
     // Day / night atmosphere
     const nightPhases = ['night'];
     const dayPhases   = ['night-summary','day-prep','day-accusation','day-voting','hunter-day-shot','day-result'];
@@ -771,6 +772,7 @@ function showMorningScreen(players) {
 
 // Jack the Ripper: Dorfmatratze encountered Jack, he becomes a Werwolf
 socket.on('jack-transformed', () => {
+    gchatBecomeWolf();
     document.getElementById('jack-overlay').hidden = false;
     document.getElementById('jack-confirm').onclick = () => {
         document.getElementById('jack-overlay').hidden = true;
@@ -799,6 +801,7 @@ socket.on('role-changed', ({ roleId }) => {
 
 // Wildes Kind: its idol died, it becomes a Werwolf
 socket.on('wildeskind-transform', ({ idolName }) => {
+    gchatBecomeWolf();
     document.getElementById('wildeskind-idol-name').textContent = idolName;
     document.getElementById('wildeskind-overlay').hidden = false;
 
@@ -966,3 +969,149 @@ goRestartNewBtn.addEventListener('click', () => {
     gameOverHostActions.hidden = true;
     socket.emit('reset-to-lobby');
 });
+
+// ── In-game Chat ─────────────────────────────────────────────────────────────
+const WOLF_CARD_IDS   = new Set(['Werwolf_blau','Werwolf_gelb','Werwolf_gruen','Werwolf_rot']);
+const gchatToggleBtn  = document.getElementById('gchat-toggle');
+const gchatPanelEl    = document.getElementById('gchat-panel');
+const gchatBadgeEl    = document.getElementById('gchat-badge');
+const gchatCloseBtn   = document.getElementById('gchat-close');
+const gchatWolfTabBtn = document.getElementById('gchat-wolf-tab');
+const gchatLogVil     = document.getElementById('gchat-log-village');
+const gchatLogWolf    = document.getElementById('gchat-log-wolf');
+const gchatInputEl    = document.getElementById('gchat-input');
+const gchatSendBtn    = document.getElementById('gchat-send');
+
+let isWolfPlayer  = WOLF_CARD_IDS.has(currentCardId);
+let gchatOpen     = false;
+let gchatTab      = 'village';   // 'village' | 'wolf'
+let gchatUnread   = { village: 0, wolf: 0 };
+let gchatPhase    = '';
+let gchatDead     = false;
+
+const DAY_PHASES  = new Set(['day-prep','day-accusation','day-voting','day-result','night-summary']);
+
+if (isWolfPlayer) gchatWolfTabBtn.hidden = false;
+
+function gchatUpdateSend() {
+    const canSend = !gchatDead && (
+        gchatTab === 'wolf' ? isWolfPlayer
+                            : DAY_PHASES.has(gchatPhase)
+    );
+    gchatInputEl.disabled  = !canSend;
+    gchatSendBtn.disabled  = !canSend;
+    gchatInputEl.placeholder = canSend ? 'Nachricht…'
+        : (gchatTab === 'village' && !DAY_PHASES.has(gchatPhase))
+            ? 'Chat nur tagsüber verfügbar'
+            : 'Schreiben nicht möglich';
+}
+
+function gchatUpdateToggle() {
+    if (gchatOpen) return;
+    const show = DAY_PHASES.has(gchatPhase) || isWolfPlayer;
+    gchatToggleBtn.hidden = !show;
+}
+
+function gchatUpdateBadge() {
+    const total = gchatUnread.village + gchatUnread.wolf;
+    gchatBadgeEl.hidden    = total === 0;
+    gchatBadgeEl.textContent = total > 9 ? '9+' : String(total);
+}
+
+function gchatAppendMsg(log, msg) {
+    const empty = log.querySelector('.gchat-empty');
+    if (empty) empty.remove();
+    const div = document.createElement('div');
+    div.className = 'gchat-msg' + (msg.chatType === 'wolf' ? ' gchat-msg--wolf' : '');
+    div.innerHTML = `<span class="gchat-msg__author">${esc(msg.author)}</span>`
+                  + `<span class="gchat-msg__text">${esc(msg.text)}</span>`;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
+function gchatSwitchTab(tab) {
+    gchatTab = tab;
+    gchatPanelEl.querySelectorAll('.gchat-tab').forEach(t =>
+        t.classList.toggle('is-active', t.dataset.tab === tab)
+    );
+    gchatLogVil.hidden  = tab !== 'village';
+    gchatLogWolf.hidden = tab !== 'wolf';
+    gchatUnread[tab] = 0;
+    gchatUpdateBadge();
+    gchatUpdateSend();
+    if (tab === 'village') gchatLogVil.scrollTop  = gchatLogVil.scrollHeight;
+    else                   gchatLogWolf.scrollTop = gchatLogWolf.scrollHeight;
+}
+
+function gchatDoSend() {
+    const text = gchatInputEl.value.trim();
+    if (!text || gchatInputEl.disabled) return;
+    socket.emit('game-chat', { text, chatType: gchatTab });
+    gchatInputEl.value = '';
+}
+
+gchatToggleBtn.addEventListener('click', () => {
+    gchatOpen = true;
+    gchatPanelEl.hidden = false;
+    gchatToggleBtn.hidden = true;
+    gchatUnread[gchatTab] = 0;
+    gchatUpdateBadge();
+    gchatUpdateSend();
+    gchatInputEl.focus();
+});
+
+gchatCloseBtn.addEventListener('click', () => {
+    gchatOpen = false;
+    gchatPanelEl.hidden = true;
+    gchatUpdateToggle();
+});
+
+gchatPanelEl.querySelectorAll('.gchat-tab').forEach(tab => {
+    tab.addEventListener('click', () => gchatSwitchTab(tab.dataset.tab));
+});
+
+gchatSendBtn.addEventListener('click', gchatDoSend);
+gchatInputEl.addEventListener('keydown', e => { if (e.key === 'Enter') gchatDoSend(); });
+
+// Typing in chat counts as activity → reset the auto-skip warning
+let gchatActivityThrottle = null;
+gchatInputEl.addEventListener('input', () => {
+    if (gchatActivityThrottle) return;
+    socket.emit('game-activity');
+    gchatActivityThrottle = setTimeout(() => { gchatActivityThrottle = null; }, 3000);
+});
+
+// Receive messages
+socket.on('game-chat-msg', (msg) => {
+    const log = msg.chatType === 'wolf' ? gchatLogWolf : gchatLogVil;
+    gchatAppendMsg(log, msg);
+    if (!gchatOpen || gchatTab !== msg.chatType) {
+        gchatUnread[msg.chatType] = (gchatUnread[msg.chatType] ?? 0) + 1;
+        gchatUpdateBadge();
+    }
+});
+
+// Chat history on reconnect
+socket.on('game-chat-history', ({ villageChat, wolfChat }) => {
+    gchatLogVil.innerHTML  = '<p class="gchat-empty">Noch keine Nachrichten.</p>';
+    gchatLogWolf.innerHTML = '<p class="gchat-empty">Noch keine Nachrichten im Rudel.</p>';
+    villageChat.forEach(msg => gchatAppendMsg(gchatLogVil, msg));
+    wolfChat.forEach(msg  => gchatAppendMsg(gchatLogWolf, msg));
+});
+
+// Hook into existing events to update chat state
+function gchatOnPhase(phase) {
+    gchatPhase = phase;
+    gchatUpdateToggle();
+    gchatUpdateSend();
+}
+
+// Hook into you-are-dead
+socket.on('you-are-dead', () => { gchatDead = true; gchatUpdateSend(); });
+
+// Wolves: reveal chat tab on transform
+function gchatBecomeWolf() {
+    isWolfPlayer = true;
+    gchatWolfTabBtn.hidden = false;
+    gchatUpdateToggle();
+}

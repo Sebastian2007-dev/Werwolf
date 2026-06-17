@@ -238,6 +238,12 @@ function pushCurrentGameState(code, room, socket) {
     } else {
         socket.emit('phase-changed', { phase: g.phase, round: g.round });
     }
+
+    // Send chat history to reconnecting player
+    socket.emit('game-chat-history', {
+        villageChat: g.villageChat ?? [],
+        wolfChat:    isWolf(room, socket.id) ? (g.wolfChat ?? []) : [],
+    });
 }
 
 function broadcast(roomCode) {
@@ -1386,6 +1392,8 @@ io.on('connection', (socket) => {
             gloeckner_used:         false,
             diebOptions:            null,
             spectators:             new Set(),
+            villageChat:            [],
+            wolfChat:               [],
         };
 
         // Dieb: generate 2 extra role options from unassigned roles
@@ -1484,6 +1492,8 @@ io.on('connection', (socket) => {
             gloeckner_used:         false,
             diebOptions:            null,
             spectators:             new Set(),
+            villageChat:            [],
+            wolfChat:               [],
         };
 
         // Dieb: generate 2 extra role options from unassigned roles
@@ -1676,6 +1686,47 @@ io.on('connection', (socket) => {
         });
 
         if (totalVoted >= totalVoters) processDayVotes(code, room);
+    });
+
+    // ─ In-game chat ──────────────────────────────────────────────────────────
+
+    socket.on('game-chat', ({ text, chatType }) => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx || !text?.trim()) return;
+        const { code, room } = ctx;
+        const g = room.game;
+        if (!g || !['village', 'wolf'].includes(chatType)) return;
+
+        const senderName = playerName(room, socket.id);
+        if (!senderName) return;
+
+        if (chatType === 'wolf' && !isWolf(room, socket.id)) return;
+
+        const msg = { author: senderName, text: text.trim().slice(0, 300), time: Date.now(), chatType };
+
+        if (chatType === 'village') {
+            g.villageChat.push(msg);
+            if (g.villageChat.length > 200) g.villageChat.shift();
+            io.to(code).emit('game-chat-msg', msg);
+        } else {
+            g.wolfChat.push(msg);
+            if (g.wolfChat.length > 200) g.wolfChat.shift();
+            [...g.alive].filter(id => isWolf(room, id))
+                .forEach(id => io.to(id).emit('game-chat-msg', msg));
+        }
+    });
+
+    // ─ Game activity: reset auto-skip timer when player types/sends in chat ──
+
+    socket.on('game-activity', () => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { code, room } = ctx;
+        const g = room.game;
+        if (!g || !g.autoMode || g.phase !== 'night') return;
+        const entry = g.nightQueue[g.nightIdx];
+        if (!entry || !entry.playerIds.includes(socket.id)) return;
+        startAutoTurnTimer(code, room, entry.playerIds);
     });
 
     // ─ Hunter shot (Jäger) ───────────────────────────────────────────────────

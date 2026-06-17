@@ -1,5 +1,20 @@
 # Changelog – Raum-Logik
 
+## [2026-06-17 22:15] Fix: Auto-Skip-Timer wird durch Chat-Aktivität zurückgesetzt
+- Wenn ein Spieler während seiner Nachtrunde im Chat tippt, wird der 30s-Auto-Skip-Timer neu gestartet
+- Client sendet `game-activity` Event bei Tastatureingabe im Chat (gedrosselt auf 1x/3s)
+- Server-Handler prüft ob Sender der aktive Nachtspieler ist, setzt dann `startAutoTurnTimer` zurück
+- Betrifft: `server.js`, `game.js`
+
+## [2026-06-17 21:45] Feature: In-Game Chat mit Dorf- und Rudel-Tab
+- Floating Chat-Button (💬) erscheint während Tagphasen für alle Spieler; für Wölfe immer sichtbar
+- "Dorf"-Tab: alle Spieler können tagsüber Nachrichten schreiben (Eingabe deaktiviert bei Nacht/als Toter)
+- "Rudel 🐺"-Tab: nur für Wölfe (inkl. transformierte WildesKind & JackTheRipper) sichtbar; immer schreibbar
+- Ungelesene-Badge auf dem Toggle-Button (getrennt je Tab)
+- Chat-Historie wird bei Reconnect wiederhergestellt (Wolf-Chat nur für Wölfe)
+- Server: `game-chat` Handler, `villageChat`/`wolfChat` Arrays im Game-State, `game-chat-history` bei Resume
+- Betrifft: `server.js`, `game.html`, `game.css`, `game.js`
+
 ## [2026-06-17 21:30] Bugfix: "Noch nicht alle Spieler sind bereit" nach Neue-Karten-Neustart
 - `reset-to-lobby` setzte `isReady = false` für ALLE Spieler einschließlich Host — Host klickt aber nie Bereit
 - `start-game`-Check prüfte `p.isReady` für alle Spieler (Server), während der Client korrekt `p.isHost || p.isReady` verwendet
