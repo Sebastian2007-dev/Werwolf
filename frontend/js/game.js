@@ -186,6 +186,8 @@ const selectTwoHint = document.getElementById('select-two-hint');
 const nightConfirm  = document.getElementById('night-confirm');
 
 let nightState = { type: null, selected: [], maxSelect: 1 };
+// Solange die Seherin ihr Ergebnis betrachtet, dürfen Warte-Screens es nicht überdecken
+let viewingResult = false;
 
 function showOverlay() { nightOverlay.hidden = false; }
 function hideOverlay() { nightOverlay.hidden = true; }
@@ -232,7 +234,9 @@ function buildTargetButtons(container, players, onSelect) {
 
 // Receive night turn
 socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
-    if (isDead) return;
+    // Die tote Zigeunerin darf ihren Fluch noch aussprechen
+    if (isDead && group !== 'Zigeunerin') return;
+    viewingResult = false;
     showOverlay();
     showActionUI();
     resetActionPanels();
@@ -352,14 +356,16 @@ socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
             const targetId = nightState.selected[0]?.id;
             if (!targetId) return;
             socket.emit('night-action', { targetId });
-            showWait('Deine Wahl wurde gespeichert.');
+            if (isDead) hideOverlay();
+            else showWait('Deine Wahl wurde gespeichert.');
         };
     }
 });
 
-// Seherin result
+// Seherin result — bleibt sichtbar, bis die Seherin "Verstanden" drückt
 socket.on('view-result', ({ targetName, roleId }) => {
     if (isDead) return;
+    viewingResult = true;
     showOverlay();
     showActionUI();
     resetActionPanels();
@@ -377,6 +383,7 @@ socket.on('view-result', ({ targetName, roleId }) => {
     nightConfirm.hidden = false;
     nightConfirm.textContent = 'Verstanden ✓';
     nightConfirm.onclick = () => {
+        viewingResult = false;
         socket.emit('night-action', { acknowledged: true });
         showWait('Du schließt die Augen wieder…');
     };
@@ -421,22 +428,24 @@ socket.on('wolf-vote-update', ({ voteCounts, majorityTarget, majorityTargetName,
 
 // Not our turn: show wait screen (skip if we are the active player)
 socket.on('night-waiting', ({ activePlayers, autoStatusMsg }) => {
-    if (isDead) return;
+    if (isDead) { nightOverlay.hidden = true; return; }
     if (activePlayers?.includes(socket.id)) return;
+    if (viewingResult) return; // Seherin liest noch ihr Ergebnis
     showOverlay();
     showWait(autoStatusMsg ?? '');
 });
 
 // Our turn is done (server moved on)
 socket.on('night-turn-done', () => {
-    if (!isDead) showWait('Gut gemacht. Warte auf die anderen…');
+    if (!isDead && !viewingResult) showWait('Gut gemacht. Warte auf die anderen…');
     autoSkipWarning.hidden = true;
     if (autoSkipInterval) { clearInterval(autoSkipInterval); autoSkipInterval = null; }
 });
 
 // Phase transitions
-socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived }) => {
+socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, alsoDied }) => {
     gchatOnPhase(phase);
+    viewingResult = false;
     // Day / night atmosphere
     const nightPhases = ['night'];
     const dayPhases   = ['night-summary','day-prep','day-accusation','day-voting','hunter-day-shot','day-result'];
@@ -486,9 +495,10 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminate
         }
     }
     if (phase === 'day-result') {
-        if (eliminated?.id === currentPlayerId || hunterShot?.id === currentPlayerId) setDead();
+        if (eliminated?.id === currentPlayerId || hunterShot?.id === currentPlayerId
+            || alsoDied?.some(d => d.id === currentPlayerId)) setDead();
         hunterOverlay.hidden = true;
-        if (dayAlive && !isDead) showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived);
+        if (dayAlive && !isDead) showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied);
     }
 });
 
@@ -633,7 +643,7 @@ function showDayNoVote() {
     dayWaitText.textContent = 'Du bist der Narr — du darfst nicht abstimmen.';
 }
 
-function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived) {
+function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied) {
     dayAccusationUi.hidden = true;
     dayVotingUi.hidden = true;
     dayWaitUi.hidden = false;
@@ -644,9 +654,12 @@ function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived) {
         text = 'Abstimmung übersprungen — niemand wird eliminiert.';
     } else if (eliminated) {
         text = `${eliminated.name} wurde vom Dorf eliminiert.`;
-        if (hunterShot) text += ` Jäger erschoss ${hunterShot.name}.`;
     } else {
         text = 'Unentschieden — niemand wird eliminiert.';
+    }
+    if (hunterShot) text += ` Jäger erschoss ${hunterShot.name}.`;
+    if (alsoDied?.length > 0) {
+        text += ' ' + alsoDied.map(d => `${d.name} (${d.roleName}) stirbt ebenfalls.`).join(' ');
     }
     dayWaitText.textContent = text;
 }
@@ -784,6 +797,7 @@ socket.on('jack-transformed', () => {
 // Dieb: picked a new role, update displayed card
 socket.on('role-changed', ({ roleId }) => {
     currentCardId = roleId;
+    if (WOLF_CARD_IDS.has(roleId)) gchatBecomeWolf();
     const newRole = ROLES.find(r => r.id === roleId);
     if (newRole) {
         document.getElementById('role-img').src = `/assets/${newRole.image}`;
@@ -797,6 +811,40 @@ socket.on('role-changed', ({ roleId }) => {
         flipBtn.textContent = 'Karte umdrehen';
         document.title = `${newRole.name} – Werwolf`;
     }
+});
+
+// Jekyll & Hyde: jede Nacht wechselt die Seite
+const jekyllPanel     = document.getElementById('jekyll-panel');
+const jekyllPanelText = document.getElementById('jekyll-panel-text');
+const jekyllRecallBtn = document.getElementById('jekyll-recall-btn');
+
+jekyllRecallBtn.addEventListener('click', () => {
+    jekyllPanel.hidden = !jekyllPanel.hidden;
+});
+
+socket.on('jekyll-state', ({ isWolf: isHyde, round }) => {
+    jekyllPanelText.textContent = isHyde
+        ? `Nacht ${round}: Du bist Hyde — heute bist du ein Werwolf und jagst mit dem Rudel.`
+        : `Nacht ${round}: Du bist Jekyll — heute bist du ein Dorfbewohner.`;
+    jekyllPanel.hidden    = false;
+    jekyllRecallBtn.hidden = false;
+    roleFaction.textContent = isHyde ? 'Werwolf' : 'Dorfbewohner';
+
+    // Rudel-Chat nur in Hyde-Nächten
+    isWolfPlayer = isHyde;
+    gchatWolfTabBtn.hidden = !isHyde;
+    if (!isHyde && gchatTab === 'wolf') gchatSwitchTab('village');
+    gchatUpdateToggle();
+    gchatUpdateSend();
+});
+
+// Bär: brummt zu Tagesbeginn, wenn ein Werwolf neben ihm sitzt
+let baerToastTimer = null;
+socket.on('baer-growl', () => {
+    const toast = document.getElementById('baer-toast');
+    toast.hidden = false;
+    if (baerToastTimer) clearTimeout(baerToastTimer);
+    baerToastTimer = setTimeout(() => { toast.hidden = true; }, 7000);
 });
 
 // Wildes Kind: its idol died, it becomes a Werwolf
@@ -814,6 +862,7 @@ socket.on('wildeskind-transform', ({ idolName }) => {
 
 // Ergebene Magd: her Herr died, she takes his role
 socket.on('magd-transform', ({ herrName, roleId, roleName: newRoleName }) => {
+    if (WOLF_CARD_IDS.has(roleId)) gchatBecomeWolf();
     const newRole = ROLES.find(r => r.id === roleId);
     magdHerrName.textContent = herrName;
     magdRoleImg.src          = newRole ? `/assets/${newRole.image}` : '';
@@ -1060,11 +1109,7 @@ gchatToggleBtn.addEventListener('click', () => {
     gchatInputEl.focus();
 });
 
-gchatCloseBtn.addEventListener('click', () => {
-    gchatOpen = false;
-    gchatPanelEl.hidden = true;
-    gchatUpdateToggle();
-});
+// Schließen-Klick wird weiter unten registriert (gchatClose, geteilt mit Zurück-Knopf/Escape)
 
 gchatPanelEl.querySelectorAll('.gchat-tab').forEach(tab => {
     tab.addEventListener('click', () => gchatSwitchTab(tab.dataset.tab));
@@ -1115,3 +1160,33 @@ function gchatBecomeWolf() {
     gchatWolfTabBtn.hidden = false;
     gchatUpdateToggle();
 }
+
+// ── Zurück-Knopf abfangen ─────────────────────────────────────────────────────
+// Handy-/Browser-Zurück wirft Spieler sonst aus dem Spiel. Stattdessen:
+// Chat offen → Chat schließen; sonst auf der Seite bleiben und Hinweis zeigen.
+const backToast = document.getElementById('back-toast');
+let backToastTimer = null;
+
+function gchatClose() {
+    gchatOpen = false;
+    gchatPanelEl.hidden = true;
+    gchatUpdateToggle();
+}
+gchatCloseBtn.addEventListener('click', gchatClose);
+
+history.pushState({ ww: 'game' }, '');
+window.addEventListener('popstate', () => {
+    if (gchatOpen) {
+        gchatClose();
+    } else {
+        backToast.hidden = false;
+        if (backToastTimer) clearTimeout(backToastTimer);
+        backToastTimer = setTimeout(() => { backToast.hidden = true; }, 3500);
+    }
+    history.pushState({ ww: 'game' }, '');
+});
+
+// Escape schließt den Chat ebenfalls
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && gchatOpen) gchatClose();
+});

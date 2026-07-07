@@ -219,6 +219,12 @@ body.is-day .card-flip {
     color: #c8a050;
 }
 .game-btn--katz-maus[hidden] { display: none; }
+.game-btn--jekyll {
+    background: rgba(130,100,190,0.12);
+    border-color: rgba(130,100,190,0.4);
+    color: #a68ad0;
+}
+.game-btn--jekyll[hidden]    { display: none; }
 
 .game-btn:hover {
     opacity: 0.88;
@@ -261,9 +267,45 @@ body.is-day .card-flip {
 }
 .katz-maus-panel[hidden] { display: none; }
 
+.jekyll-panel {
+    padding: 0.65rem 1.2rem;
+    background: rgba(130,100,190,0.1);
+    border: 1px solid rgba(130,100,190,0.35);
+    border-radius: 10px;
+    color: #a68ad0;
+    font-size: 0.88rem;
+    animation: panel-appear 0.4s cubic-bezier(0.2,0,0,1);
+}
+.jekyll-panel[hidden] { display: none; }
+
 @keyframes panel-appear {
     from { opacity: 0; transform: scale(0.93) translateY(6px); }
     to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+/* ── Bär-Toast ──────────────────────────────────────────────────────────────── */
+.baer-toast {
+    position: fixed;
+    top: 4.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 90;
+    padding: 0.7rem 1.4rem;
+    background: rgba(60,40,15,0.95);
+    border: 1px solid rgba(180,140,70,0.5);
+    border-radius: 12px;
+    color: #e0be82;
+    font-size: 0.92rem;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    animation: panel-appear 0.4s cubic-bezier(0.2,0,0,1);
+}
+.baer-toast[hidden] { display: none; }
+
+/* Zurück-Knopf-Hinweis nutzt das Toast-Layout mit neutraler Farbe */
+.back-toast {
+    background: rgba(30,30,40,0.95);
+    border-color: rgba(255,255,255,0.25);
+    color: var(--text);
 }
 
 /* ── Spectator panel ────────────────────────────────────────────────────────── */
@@ -1384,16 +1426,17 @@ body.is-day .day-btn--confirm {
 .gchat-tab[hidden] { display: none; }
 
 .gchat-panel__close {
-    border: none;
-    background: none;
-    color: var(--text-muted);
-    font-size: 1rem;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.07);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.85rem;
     cursor: pointer;
-    opacity: 0.55;
-    padding: 0.3rem 0.6rem;
+    padding: 0.45rem 0.95rem;
     transition: opacity 150ms ease;
+    white-space: nowrap;
 }
-.gchat-panel__close:hover { opacity: 1; }
+.gchat-panel__close:hover { background: rgba(255,255,255,0.14); }
 
 .gchat-log {
     flex: 1;

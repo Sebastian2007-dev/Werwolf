@@ -155,7 +155,7 @@ function renderPlayers(players) {
             ${p.isHost ? '<span class="player-item__crown" title="Spielleiter">&#9812;</span>' : ''}
             <span class="player-item__name">${h(p.name)}${isMe ? ' <em style="opacity:.5;font-style:normal">(du)</em>' : ''}${isDesNarrator ? ' <em style="opacity:.6;font-style:normal">(Erzähler)</em>' : ''}</span>
             ${reqRole ? `<span class="player-item__request">${h(reqRole.name)}</span>` : ''}
-            ${!p.isHost ? `<span class="player-item__status">${p.isReady ? '&#10003;' : '&hellip;'}</span>` : ''}
+            ${!p.isHost ? `<span class="player-item__status${p.isReady ? '' : ' is-waiting'}">${p.isReady ? '&#10003; bereit' : 'nicht bereit'}</span>` : ''}
             ${hostActions}
         </li>`;
     }).join('');
@@ -288,6 +288,13 @@ function closeChat() {
 }
 
 // ── Footer state ──────────────────────────────────────────────────────────────
+const footerHint = document.getElementById('footer-hint');
+
+function setReadyBtnState(isReady) {
+    readyBtn.classList.toggle('is-active', isReady);
+    readyBtn.textContent = isReady ? '✓ Du bist bereit' : 'Bereit? Hier tippen!';
+}
+
 function updateFooter(room) {
     if (isHost) {
         const needed      = room.players.length - (room.narratorMode ? 1 : 0);
@@ -295,16 +302,41 @@ function updateFooter(room) {
         const wolfSelected = room.selectedCards.some(id => id.startsWith('Werwolf_'));
         const cardOk      = wolfSelected && needed >= 2;
         startBtn.disabled = !(allReady && cardOk);
+
+        // Dem Host zeigen, warum es noch nicht losgehen kann
+        const notReady = room.players.filter(p => !p.isHost && !p.isReady).map(p => p.name);
+        if (notReady.length > 0) {
+            footerHint.textContent = `Warte auf „Bereit" von: ${notReady.join(', ')}`;
+            footerHint.hidden = false;
+        } else if (!wolfSelected) {
+            footerHint.textContent = 'Wähle mindestens eine Werwolf-Karte aus.';
+            footerHint.hidden = false;
+        } else {
+            footerHint.hidden = true;
+        }
         return;
     }
     const me = room.players.find(p => p.id === myId);
-    if (me) readyBtn.classList.toggle('is-active', me.isReady);
+    if (me) {
+        setReadyBtnState(me.isReady);
+        footerHint.textContent = me.isReady
+            ? 'Du bist bereit — warte, bis der Host das Spiel startet.'
+            : 'Tippe auf „Bereit", sonst kann das Spiel nicht starten!';
+        footerHint.hidden = false;
+    }
 }
 
 // ── Interactions ──────────────────────────────────────────────────────────────
 readyBtn.addEventListener('click', () => {
     const me = currentRoom?.players?.find(p => p.id === myId);
-    socket.emit('set-ready', { ready: !me?.isReady });
+    const newReady = !me?.isReady;
+    // Sofortiges visuelles Feedback, ohne auf den Server zu warten
+    setReadyBtnState(newReady);
+    footerHint.textContent = newReady
+        ? 'Du bist bereit — warte, bis der Host das Spiel startet.'
+        : 'Tippe auf „Bereit", sonst kann das Spiel nicht starten!';
+    footerHint.hidden = false;
+    socket.emit('set-ready', { ready: newReady });
 });
 
 startBtn.addEventListener('click', () => {
@@ -324,6 +356,14 @@ chatToggle.addEventListener('click', () => {
     if (chatPanelOpen) closeChat(); else openChat();
 });
 chatBackdrop.addEventListener('click', closeChat);
+
+// Zurück-Knopf abfangen: Chat schließen statt die Lobby zu verlassen
+history.pushState({ ww: 'lobby' }, '');
+window.addEventListener('popstate', () => {
+    if (chatPanelOpen) closeChat();
+    else if (!qrModal.hidden) closeQrModal();
+    history.pushState({ ww: 'lobby' }, '');
+});
 
 copyBtn.addEventListener('click', () => {
     const code = codeDisplay.textContent;

@@ -71,19 +71,19 @@ socket.on('narrator-update', (data) => {
     if (data.events)  renderLog(data.events);
     updateButtons(data.phase, data.activeEntry, data.waiting);
     if (data.phase === 'night-summary' && data.summary) showSummary(data.summary);
-    if (data.phase === 'day-result') showDayResult(data.eliminated, data.skipped, data.hunterShot);
+    if (data.phase === 'day-result') showDayResult(data.eliminated, data.skipped, data.hunterShot, data.alsoDied, data.narrSurvived);
 });
 
 socket.on('phase-changed', ({ phase, round }) => {
     updateHeader(phase, round);
     updateButtons(phase, null, false);
-    if (phase === 'day-vote' || phase === 'day-prep') {
+    if (phase === 'day-voting' || phase === 'day-prep') {
         phaseCard.classList.remove('is-night');
     }
 });
 
 socket.on('game-over', ({ winner, message }) => {
-    const labels = { lovers: 'Liebespaar', wolves: 'Werwölfe', villagers: 'Dorfbewohner' };
+    const labels = { lovers: 'Liebespaar', wolves: 'Werwölfe', villagers: 'Dorfbewohner', 'einsamer-wolf': 'Einsamer Wolf' };
     phaseCard.classList.remove('is-night');
     phaseEyebrow.textContent = 'Spielende';
     phaseTitle.textContent   = labels[winner] ?? winner;
@@ -114,8 +114,8 @@ socket.on('session-ended', () => {
 });
 
 socket.on('auto-mode-activated', ({ message }) => {
-    advanceBtn.hidden = true;
-    skipBtn.hidden    = true;
+    nextBtn.hidden = true;
+    skipBtn.hidden = true;
     const banner = document.createElement('p');
     banner.className = 'narrator-auto-banner';
     banner.textContent = message;
@@ -197,15 +197,24 @@ function renderLog(events) {
 
 function updateButtons(phase, entry, waiting) {
     gameOverActions.hidden = (phase !== 'game-over');
-    if (phase === 'night') {
+    skipBtn.hidden = true;
+    if (phase === 'game-over') {
+        nextBtn.hidden = true;
+    } else if (phase === 'night') {
         skipBtn.hidden = !waiting;
         nextBtn.textContent = 'Weiter →';
         nextBtn.hidden = false;
-    } else if (phase === 'night-summary' || phase === 'day-accusation' || phase === 'day-voting' || phase === 'day-result' || phase === 'game-over' || phase === 'hunter-night-shot' || phase === 'hunter-day-shot') {
-        skipBtn.hidden = true;
-        nextBtn.hidden = true;
+    } else if (phase === 'night-summary' || phase === 'day-result') {
+        // Immer sichtbar — falls das Modal versehentlich geschlossen wurde
+        nextBtn.textContent = 'Weiter →';
+        nextBtn.hidden = false;
+    } else if (phase === 'hunter-night-shot' || phase === 'hunter-day-shot') {
+        nextBtn.textContent = 'Jäger überspringen →';
+        nextBtn.hidden = false;
+    } else if (phase === 'day-accusation' || phase === 'day-voting') {
+        nextBtn.textContent = 'Phase abschließen →';
+        nextBtn.hidden = false;
     } else {
-        skipBtn.hidden = true;
         nextBtn.hidden = false;
         nextBtn.textContent = 'Nacht beginnt →';
     }
@@ -237,6 +246,13 @@ function showSummary(summary) {
 }
 
 // ── Interactions ──────────────────────────────────────────────────────────────
+
+// Zurück-Knopf abfangen — der Erzähler darf nicht versehentlich das Spiel verlassen
+history.pushState({ ww: 'narrator' }, '');
+window.addEventListener('popstate', () => {
+    history.pushState({ ww: 'narrator' }, '');
+});
+
 nextBtn.addEventListener('click', () => {
     socket.emit('phase-advance');
 });
@@ -273,30 +289,29 @@ dayResultModal.addEventListener('click', (e) => {
     if (e.target === dayResultModal) dayResultModal.close();
 });
 
-function showDayResult(eliminated, skipped, hunterShot) {
+function showDayResult(eliminated, skipped, hunterShot, alsoDied, narrSurvived) {
     dayResultBody.innerHTML = '';
-    if (skipped) {
+    const addLine = (text, cls = '') => {
         const p = document.createElement('p');
-        p.className = 'summary-line';
-        p.textContent = 'Das Dorf überspringt die Abstimmung — niemand wird eliminiert.';
+        p.className = `summary-line ${cls}`;
+        p.textContent = text;
         dayResultBody.appendChild(p);
+    };
+    if (narrSurvived) {
+        addLine('Der Narr überlebt die Abstimmung — Narrenfreiheit.');
+    } else if (skipped) {
+        addLine('Das Dorf überspringt die Abstimmung — niemand wird eliminiert.');
     } else if (eliminated) {
-        const p = document.createElement('p');
-        p.className = 'summary-line is-death';
-        p.innerHTML = `${h(eliminated.name)} (${h(eliminated.roleName)}) wurde vom Dorf eliminiert.`;
-        dayResultBody.appendChild(p);
+        addLine(`${eliminated.name} (${eliminated.roleName}) wurde vom Dorf eliminiert.`, 'is-death');
     } else {
-        const p = document.createElement('p');
-        p.className = 'summary-line';
-        p.textContent = 'Unentschieden — niemand wird eliminiert.';
-        dayResultBody.appendChild(p);
+        addLine('Unentschieden — niemand wird eliminiert.');
     }
     if (hunterShot) {
-        const p = document.createElement('p');
-        p.className = 'summary-line is-death';
-        p.innerHTML = `Jäger erschoss ${h(hunterShot.name)} (${h(hunterShot.roleName)}).`;
-        dayResultBody.appendChild(p);
+        addLine(`Jäger erschoss ${hunterShot.name} (${hunterShot.roleName}).`, 'is-death');
     }
+    (alsoDied ?? []).forEach(d => {
+        addLine(`${d.name} (${d.roleName}) stirbt ebenfalls.`, 'is-death');
+    });
     dayResultModal.showModal();
 }
 

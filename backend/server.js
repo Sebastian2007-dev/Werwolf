@@ -20,18 +20,20 @@ const WOLF_IDS = new Set(['Werwolf_blau', 'Werwolf_gelb', 'Werwolf_gruen', 'Werw
 const NIGHT_ORDER = [
     { group: 'Ergebene Magd',   roleIds: ['ErgebeneMagd'],                                        firstNightOnly: true,   actionType: 'select-one',    hint: 'Wähle deinen Herren aus. Du weißt nicht, welche Rolle er hat.' },
     { group: 'Amor',            roleIds: ['Amor'],                                              firstNightOnly: true,   actionType: 'select-two',    hint: 'Wähle 2 Spieler als Liebespaar aus.' },
-    { group: 'Dieb',            roleIds: ['Dieb'],                                              firstNightOnly: true,   actionType: 'select-one',    hint: 'Du kannst eine alternative Rolle übernehmen.' },
+    { group: 'Dieb',            roleIds: ['Dieb'],                                              firstNightOnly: true,   actionType: 'optional',      hint: 'Du kannst eine alternative Rolle übernehmen — oder Dieb bleiben.' },
     { group: 'Wildes Kind',     roleIds: ['WildesKind'],                                        firstNightOnly: true,   actionType: 'select-one',    hint: 'Wähle dein Idol aus.' },
     { group: 'Silberschmied',   roleIds: ['Silberschmied'],                                    firstNightOnly: true,   actionType: 'select-one',    hint: 'Rüste einen Spieler mit Silberwaffen aus.' },
     { group: 'Dorfmatratze',    roleIds: ['Dorfmatraze'],                                      firstNightOnly: false,  actionType: 'select-one',    hint: 'Bei wem schläfst du heute Nacht?' },
     { group: 'Seherin',         roleIds: ['Seherin'],                                          firstNightOnly: false,  actionType: 'view',          hint: 'Schau dir die Karte eines Spielers an.' },
     { group: 'Händler',         roleIds: ['Haendler'],                                         firstNightOnly: false,  actionType: 'select-one',    hint: 'Schicke einen Spieler für diese Runde einkaufen.' },
+    // Glöckner MUSS vor den Werwölfen dran sein, damit sein Läuten die Wolfsrunde derselben Nacht ausfallen lassen kann
+    { group: 'Glöckner',        roleIds: ['Gloeckner'],                                        firstNightOnly: false,  actionType: 'optional',      hint: 'Möchtest du heute die Glocken läuten? (Optional, einmalig)' },
     { group: 'Werwölfe',        roleIds: ['Werwolf_blau','Werwolf_gelb','Werwolf_gruen','Werwolf_rot'], firstNightOnly: false, actionType: 'kill', hint: 'Wählt gemeinsam ein Opfer aus.' },
+    { group: 'Zigeunerin',      roleIds: ['Zigeunerin'],                                       firstNightOnly: false,  actionType: 'select-one',    hint: 'Du wurdest angeklagt — verfluche einen Werwolf, der mit dir stirbt.' },
     { group: 'Hexe',            roleIds: ['Hexe'],                                             firstNightOnly: false,  actionType: 'witch',         hint: 'Du kannst heilen oder vergiften.' },
     { group: 'Einsamer Wolf',   roleIds: ['EinsamerWolf'],                                     everySecondNight: true, actionType: 'select-one',    hint: 'Wähle einen Werwolf, den du tötest.' },
     { group: 'Jack the Ripper', roleIds: ['JackTheRipper'],                                    firstNightOnly: false,  actionType: 'select-one',    hint: 'Wähle deinen heutigen Besuch.' },
     { group: 'Gendarm',         roleIds: ['Gendarm'],                                          firstNightOnly: false,  actionType: 'optional-kill', hint: 'Möchtest du jemanden verhaften? (Optional, einmalig)' },
-    { group: 'Glöckner',        roleIds: ['Gloeckner'],                                        firstNightOnly: false,  actionType: 'optional',      hint: 'Möchtest du heute die Glocken läuten? (Optional, einmalig)' },
 ];
 
 const ROLE_NAMES = {
@@ -61,6 +63,7 @@ const AUTO_NIGHT_MSGS = {
     'Gendarm':        'Der Gendarm schleicht durchs Dorf.',
     'Dieb':           'Ein Dieb schleicht durch das Haus.',
     'Jack the Ripper':'Im Nebel schleicht eine dunkle Gestalt.',
+    'Zigeunerin':     'Ein alter Fluch liegt in der Luft…',
 };
 
 // ── Room helpers ──────────────────────────────────────────────────────────────
@@ -135,8 +138,19 @@ function replacePlayerSocket(room, oldId, newId) {
         if (g.einsamerWolf_target === oldId)     g.einsamerWolf_target     = newId;
         if (g.jack_target === oldId)             g.jack_target             = newId;
         if (g.gendarm_target === oldId)          g.gendarm_target          = newId;
+        if (g.zigeunerin_target === oldId)       g.zigeunerin_target       = newId;
         replaceIdInArray(g.lovers, oldId, newId);
         replaceIdInSet(g.spectators, oldId, newId);
+        replaceIdInArray(g.dayAccused, oldId, newId);
+
+        // Day nominations/votes: keys are the voters, values the targets
+        for (const obj of [g.dayNominations, g.dayVotes]) {
+            if (!obj) continue;
+            replaceObjectKey(obj, oldId, newId);
+            for (const key of Object.keys(obj)) {
+                if (obj[key] === oldId) obj[key] = newId;
+            }
+        }
 
         g.nightQueue?.forEach(entry => replaceIdInArray(entry.playerIds, oldId, newId));
     }
@@ -203,31 +217,12 @@ function pushCurrentGameState(code, room, socket) {
     if (g.phase === 'night') {
         const entry = g.nightQueue?.[g.nightIdx];
         if (entry?.playerIds.includes(socket.id) && !entry.done) {
-            const targets = room.players.filter(p =>
-                g.alive.has(p.id) && p.id !== g.narratorId
-            ).map(p => ({ id: p.id, name: p.name }));
-
-            const myTargets = entry.actionType === 'kill-wolf'
-                ? targets.filter(t => WOLF_IDS.has(room.assignments[t.id]))
-                : targets.filter(t => t.id !== socket.id);
-
-            const extra = {};
-            if (entry.actionType === 'witch') {
-                const dorfmatrazeId = Object.entries(room.assignments)
-                    .find(([id, rid]) => rid === 'Dorfmatraze' && g.alive.has(id))?.[0];
-                const victimIsProtected = dorfmatrazeId && g.nightVictim === dorfmatrazeId;
-                extra.victim    = (g.nightVictim && !victimIsProtected)
-                    ? { id: g.nightVictim, name: playerName(room, g.nightVictim) }
-                    : null;
-                extra.canHeal   = !g.hexeUsedHeal;
-                extra.canPoison = !g.hexeUsedPoison;
-            }
-
+            const extra = entry.actionType === 'witch' ? buildWitchExtra(room, g) : {};
             socket.emit('your-night-turn', {
                 group: entry.group,
                 actionType: entry.actionType,
                 hint: entry.hint,
-                players: myTargets,
+                players: buildNightTargetsFor(room, g, entry, socket.id),
                 extra,
             });
         } else {
@@ -235,8 +230,21 @@ function pushCurrentGameState(code, room, socket) {
                 waitingFor: entry?.playerIds.map(id => playerName(room, id)).join(', ') ?? null,
             });
         }
+    } else if ((g.phase === 'hunter-night-shot' || g.phase === 'hunter-day-shot')
+               && findPlayerByRole(room, 'Jaeger') === socket.id) {
+        // Reconnecting Jäger gets his shoot prompt again
+        socket.emit('hunter-shoot', { targets: hunterShootTargets(room, g) });
     } else {
         socket.emit('phase-changed', { phase: g.phase, round: g.round });
+    }
+
+    // Re-send persistent role knowledge on reconnect
+    if (g.lovers?.includes(socket.id)) {
+        const partner = g.lovers.find(id => id !== socket.id);
+        socket.emit('you-are-lovers', { partnerName: playerName(room, partner) });
+    }
+    if (room.assignments[socket.id] === 'JekylUndHyde') {
+        socket.emit('jekyll-state', { isWolf: g.jekyllIsWolf, round: g.round });
     }
 
     // Send chat history to reconnecting player
@@ -278,12 +286,41 @@ function startAutoTurnTimer(code, room, playerIds) {
     }, 30000);
 }
 
+// Jäger starb in der Nacht und schießt (oder wird übersprungen: targetId = null)
+function resolveNightHunterShot(code, room, targetId) {
+    const g = room.game;
+    clearAutoTimers(g);
+    const jaegerId = findPlayerByRole(room, 'Jaeger');
+    let shotInfo    = null;
+    let extraDeaths = [];
+    if (targetId && g.alive.has(targetId) && !g.pendingDeaths.has(targetId) && targetId !== g.haendler_away) {
+        addEvent(g, `${playerName(room, jaegerId)} (Jäger) erschoss ${playerName(room, targetId)}.`);
+        const deaths = applyDeath(code, room, targetId);
+        shotInfo    = deaths[0] ?? null;
+        extraDeaths = deaths.slice(1);
+    } else {
+        addEvent(g, 'Der Jäger hat nicht geschossen.');
+    }
+    const remainingDeaths = (g.nightSummary?.deaths ?? []).filter(d => d.id !== jaegerId);
+    io.to(code).emit('morning-full-reveal', {
+        deaths: [...remainingDeaths, ...extraDeaths],
+        hunterShot: shotInfo,
+    });
+    g.phase = 'morning-reveal'; // Übergangsphase verhindert doppeltes Weiterschalten
+    setTimeout(() => {
+        if (room.game === g && g.phase === 'morning-reveal') startDay(code, room);
+    }, 2500);
+}
+
 function doPhaseAdvance(code, room) {
     const g = room.game;
     if (!g) return;
     if (g.phase === 'day-prep') {
         startNight(code, room);
     } else if (g.phase === 'night') {
+        // Weiter nur, wenn die aktive Rolle fertig ist — Überspringen geht separat via phase-skip
+        const entry = g.nightQueue[g.nightIdx];
+        if (entry && !entry.done) return;
         advanceNight(code, room);
     } else if (g.phase === 'night-summary') {
         const deaths   = g.nightSummary?.deaths ?? [];
@@ -293,21 +330,37 @@ function doPhaseAdvance(code, room) {
             const hunterDeath = deaths.find(d => d.id === jaegerId);
             io.to(code).emit('morning-partial-reveal', { hunterDeath });
             g.phase = 'hunter-night-shot';
-            const deadIds = new Set(deaths.map(d => d.id));
-            const shootTargets = [...g.alive]
-                .filter(id => id !== jaegerId && !deadIds.has(id))
-                .map(id => ({ id, name: playerName(room, id) }));
-            io.to(jaegerId).emit('hunter-shoot', { targets: shootTargets });
+            io.to(jaegerId).emit('hunter-shoot', { targets: hunterShootTargets(room, g) });
             addEvent(g, `${playerName(room, jaegerId)} (Jäger) reißt jemanden mit in den Tod.`);
             narratorPush(g, {
                 phase: 'hunter-night-shot', round: g.round,
                 hunterName: playerName(room, jaegerId),
                 events: g.events, players: playerStatusList(room, g),
             });
+            if (g.autoMode) {
+                clearAutoTimers(g);
+                g.autoTimer = setTimeout(() => {
+                    if (room.game?.phase === 'hunter-night-shot') resolveNightHunterShot(code, room, null);
+                }, 45000);
+            }
         } else {
             io.to(code).emit('morning-reveal', { deaths });
-            setTimeout(() => startDay(code, room), 2500);
+            g.phase = 'morning-reveal'; // Übergangsphase verhindert doppeltes Weiterschalten
+            setTimeout(() => {
+                if (room.game === g && g.phase === 'morning-reveal') startDay(code, room);
+            }, 2500);
         }
+    } else if (g.phase === 'hunter-night-shot') {
+        resolveNightHunterShot(code, room, null);
+    } else if (g.phase === 'hunter-day-shot') {
+        resolveDayHunterShot(code, room, null);
+    } else if (g.phase === 'day-accusation') {
+        // Erzähler erzwingt das Ende der Anklage-Phase (z. B. bei AFK-Spielern)
+        addEvent(g, 'Der Erzähler beendet die Anklage-Phase.');
+        processDayNominations(code, room);
+    } else if (g.phase === 'day-voting') {
+        addEvent(g, 'Der Erzähler beendet die Abstimmung.');
+        processDayVotes(code, room);
     } else if (g.phase === 'day-result') {
         startNight(code, room);
     }
@@ -428,6 +481,79 @@ function findPlayerByRole(room, roleId) {
     return Object.entries(room.assignments ?? {}).find(([, rid]) => rid === roleId)?.[0] ?? null;
 }
 
+function freshGameState(room, narratorPlayerId, assignments) {
+    return {
+        round:          1,
+        phase:          'day-prep',
+        narratorId:     narratorPlayerId,
+        autoMode:       !narratorPlayerId,
+        autoTimer:      null,
+        alive:          new Set(Object.keys(assignments)),
+        events:         [],
+        hexeUsedHeal:   false,
+        hexeUsedPoison: false,
+        nightVictim:    null,
+        lovers:         null,
+        nightQueue:     [],
+        nightIdx:       -1,
+        pendingDeaths:  new Set(),
+        nightLog:       [],
+        maxAccusations: room.maxAccusations ?? 3,
+        dayNominations: {},
+        dayAccused:     [],
+        dayVotes:       {},
+        dayAlsoDied:    [],
+        dayEliminatedInfo:       null,
+        magd_herr:               null,
+        wildesKind_idol:         null,
+        wildesKind_isWolf:       false,
+        alter_lives:             2,
+        silberschmied_protected: null,
+        einsamerWolf_target:     null,
+        jack_target:             null,
+        jack_isWolf:             false,
+        jekyllIsWolf:            false,
+        zigeunerin_cursePending: false,
+        zigeunerin_target:       null,
+        gendarm_target:          null,
+        gendarm_used:            false,
+        gloeckner_used:          false,
+        diebOptions:             null,
+        spectators:              new Set(),
+        villageChat:             [],
+        wolfChat:                [],
+    };
+}
+
+// Kills a player outside the night resolution (day vote, hunter shot, disconnect).
+// Applies the lover cascade and role transforms; returns info objects for every death.
+function applyDeath(code, room, deadId) {
+    const g = room.game;
+    const deaths = [];
+    const kill = (id) => {
+        if (!g.alive.has(id)) return;
+        g.alive.delete(id);
+        deaths.push({
+            id,
+            name:     playerName(room, id),
+            roleId:   room.assignments[id],
+            roleName: roleName(room.assignments, id),
+        });
+        tryMagdTransform(code, room, id);
+        tryWildesKindTransform(code, room, id);
+        io.to(id).emit('you-are-dead');
+    };
+    kill(deadId);
+    if (g.lovers?.includes(deadId)) {
+        const partner = g.lovers.find(id => id !== deadId);
+        if (partner && g.alive.has(partner)) {
+            kill(partner);
+            addEvent(g, `Liebespaar: ${playerName(room, partner)} stirbt mit.`);
+        }
+    }
+    return deaths;
+}
+
 function tryMagdTransform(code, room, deadId) {
     const g = room.game;
     if (!g.magd_herr || g.magd_herr !== deadId) return;
@@ -478,9 +604,17 @@ function buildNightQueue(assignments, alive, round, g) {
         if (tpl.group === 'Gendarm'         && g?.gendarm_used)    continue;
         if (tpl.group === 'Jack the Ripper' && g?.jack_isWolf)     continue;
 
-        const pids = Object.entries(assignments)
-            .filter(([pid, rid]) => tpl.roleIds.includes(rid) && alive.has(pid))
-            .map(([pid]) => pid);
+        let pids;
+        if (tpl.group === 'Zigeunerin') {
+            // Fluch-Runde: nur nach ihrem Anklage-Tod — sie handelt als Tote
+            if (!g?.zigeunerin_cursePending) continue;
+            const zigId = Object.entries(assignments).find(([, rid]) => rid === 'Zigeunerin')?.[0];
+            pids = zigId ? [zigId] : [];
+        } else {
+            pids = Object.entries(assignments)
+                .filter(([pid, rid]) => tpl.roleIds.includes(rid) && alive.has(pid))
+                .map(([pid]) => pid);
+        }
 
         if (pids.length === 0) continue;
 
@@ -495,27 +629,52 @@ function buildNightQueue(assignments, alive, round, g) {
     return queue;
 }
 
+// Adds transformed wolves (Wildes Kind, Jack, Hyde) to the wolf night turn.
+// Creates the wolf entry if no natural-born wolf is alive anymore.
+function addTransformedWolves(room, g) {
+    const extraIds = [];
+    const pushIfAlive = (roleId, condition) => {
+        if (!condition) return;
+        const pid = findPlayerByRole(room, roleId);
+        if (pid && g.alive.has(pid)) extraIds.push(pid);
+    };
+    pushIfAlive('WildesKind',    g.wildesKind_isWolf);
+    pushIfAlive('JackTheRipper', g.jack_isWolf);
+    pushIfAlive('JekylUndHyde',  g.jekyllIsWolf);
+
+    if (extraIds.length === 0) return;
+
+    let wolfEntry = g.nightQueue.find(e => e.group === 'Werwölfe');
+    if (!wolfEntry) {
+        wolfEntry = {
+            group: 'Werwölfe', playerIds: [], actionType: 'kill',
+            hint: 'Wählt gemeinsam ein Opfer aus.', done: false,
+        };
+        const tpl     = NIGHT_ORDER.find(t => t.group === 'Werwölfe');
+        const wolfIdx = NIGHT_ORDER.indexOf(tpl);
+        const insertAt = g.nightQueue.findIndex(e =>
+            NIGHT_ORDER.findIndex(t => t.group === e.group) > wolfIdx);
+        if (insertAt === -1) g.nightQueue.push(wolfEntry);
+        else                 g.nightQueue.splice(insertAt, 0, wolfEntry);
+    }
+    extraIds.forEach(id => {
+        if (!wolfEntry.playerIds.includes(id)) wolfEntry.playerIds.push(id);
+    });
+}
+
 function startNight(code, room) {
     const g = room.game;
-    g.phase       = 'night';
-    g.nightQueue  = buildNightQueue(room.assignments, g.alive, g.round, g);
+    g.phase = 'night';
 
-    // Transformed WildesKind joins the wolf night turn
-    if (g.wildesKind_isWolf) {
-        const wkId = findPlayerByRole(room, 'WildesKind');
-        if (wkId && g.alive.has(wkId)) {
-            const wolfEntry = g.nightQueue.find(e => e.group === 'Werwölfe');
-            if (wolfEntry) wolfEntry.playerIds.push(wkId);
-        }
+    // Jekyll & Hyde wechselt jede Nacht die Seite: ungerade Nächte Jekyll (Dorf), gerade Nächte Hyde (Wolf)
+    const jekyllId = findPlayerByRole(room, 'JekylUndHyde');
+    if (jekyllId && g.alive.has(jekyllId)) {
+        g.jekyllIsWolf = g.round % 2 === 0;
+        io.to(jekyllId).emit('jekyll-state', { isWolf: g.jekyllIsWolf, round: g.round });
     }
-    // Transformed JackTheRipper joins the wolf night turn
-    if (g.jack_isWolf) {
-        const jackId = findPlayerByRole(room, 'JackTheRipper');
-        if (jackId && g.alive.has(jackId)) {
-            const wolfEntry = g.nightQueue.find(e => e.group === 'Werwölfe');
-            if (wolfEntry) wolfEntry.playerIds.push(jackId);
-        }
-    }
+
+    g.nightQueue = buildNightQueue(room.assignments, g.alive, g.round, g);
+    addTransformedWolves(room, g);
     g.nightIdx    = -1;
     g.nightVictim        = null;
     g.hexeHealTarget     = null;
@@ -530,10 +689,49 @@ function startNight(code, room) {
     g.einsamerWolf_target   = null;
     g.jack_target           = null;
     g.gendarm_target        = null;
+    g.zigeunerin_target     = null;
 
     addEvent(g, `Nacht ${g.round} beginnt.`);
     io.to(code).emit('phase-changed', { phase: 'night', round: g.round });
     advanceNight(code, room);
+}
+
+// Target list for a night-turn player — shared by advanceNight and reconnect push
+function buildNightTargetsFor(room, g, entry, pid) {
+    const targets = room.players.filter(p =>
+        g.alive.has(p.id) && p.id !== g.narratorId
+    ).map(p => ({ id: p.id, name: p.name }));
+
+    if (entry.group === 'Dieb' && g.diebOptions?.length > 0) {
+        return g.diebOptions.map(rid => ({ id: rid, name: ROLE_NAMES[rid] ?? rid }));
+    }
+    if (entry.group === 'Glöckner') {
+        return [{ id: '__ring__', name: 'Glocken läuten' }];
+    }
+    if (entry.group === 'Einsamer Wolf' || entry.group === 'Zigeunerin') {
+        return targets.filter(t => isWolf(room, t.id));
+    }
+    if (entry.actionType === 'kill') {
+        return targets.filter(t => !isWolf(room, t.id));
+    }
+    if (entry.group === 'Amor') {
+        return targets; // Amor darf sich selbst ins Liebespaar aufnehmen
+    }
+    return targets.filter(t => t.id !== pid);
+}
+
+function buildWitchExtra(room, g) {
+    // Hide the wolf victim from Hexe if the victim is the protected Dorfmatratze
+    const dorfmatrazeId = Object.entries(room.assignments)
+        .find(([id, rid]) => rid === 'Dorfmatraze' && g.alive.has(id))?.[0];
+    const victimIsProtected = dorfmatrazeId && g.nightVictim === dorfmatrazeId;
+    return {
+        victim: (g.nightVictim && !victimIsProtected)
+            ? { id: g.nightVictim, name: playerName(room, g.nightVictim) }
+            : null,
+        canHeal:   !g.hexeUsedHeal,
+        canPoison: !g.hexeUsedPoison,
+    };
 }
 
 function advanceNight(code, room) {
@@ -544,46 +742,16 @@ function advanceNight(code, room) {
 
     const entry = g.nightQueue[g.nightIdx];
 
-    // Build target list: all alive, non-narrator players
-    const targets = room.players.filter(p =>
-        g.alive.has(p.id) && p.id !== g.narratorId
-    ).map(p => ({ id: p.id, name: p.name }));
-
     addEvent(g, `${entry.group} ist am Zug.`);
 
     // Notify active role players
     entry.playerIds.forEach(pid => {
-        let myTargets = entry.actionType === 'kill-wolf'
-            ? targets.filter(t => isWolf(room, t.id))
-            : entry.actionType === 'kill'
-                ? targets.filter(t => !isWolf(room, t.id))
-                : targets.filter(t => t.id !== pid);
-
-        // Special target overrides
-        if (entry.group === 'Dieb' && g.diebOptions?.length > 0) {
-            myTargets = g.diebOptions.map(rid => ({ id: rid, name: ROLE_NAMES[rid] ?? rid }));
-        } else if (entry.group === 'Glöckner') {
-            myTargets = [{ id: '__ring__', name: 'Glocken läuten' }];
-        } else if (entry.group === 'Einsamer Wolf') {
-            myTargets = targets.filter(t => isWolf(room, t.id));
-        }
-
-        const extra = {};
-        if (entry.actionType === 'witch') {
-            // Hide the wolf victim from Hexe if the victim is the protected Dorfmatratze
-            const dorfmatrazeId = Object.entries(room.assignments)
-                .find(([id, rid]) => rid === 'Dorfmatraze' && g.alive.has(id))?.[0];
-            const victimIsProtected = dorfmatrazeId && g.nightVictim === dorfmatrazeId;
-            extra.victim    = (g.nightVictim && !victimIsProtected)
-                ? { id: g.nightVictim, name: playerName(room, g.nightVictim) }
-                : null;
-            extra.canHeal   = !g.hexeUsedHeal;
-            extra.canPoison = !g.hexeUsedPoison;
-        }
-
+        const extra = entry.actionType === 'witch' ? buildWitchExtra(room, g) : {};
         io.to(pid).emit('your-night-turn', {
             group: entry.group, actionType: entry.actionType,
-            hint: entry.hint, players: myTargets, extra,
+            hint: entry.hint,
+            players: buildNightTargetsFor(room, g, entry, pid),
+            extra,
         });
     });
 
@@ -617,6 +785,14 @@ function skipNight(code, room) {
     advanceNight(code, room);
 }
 
+// Valid targets for the Jäger's revenge shot (night: before deaths applied; day: after)
+function hunterShootTargets(room, g) {
+    const jaegerId = findPlayerByRole(room, 'Jaeger');
+    return [...g.alive]
+        .filter(id => id !== jaegerId && !g.pendingDeaths.has(id) && id !== g.haendler_away)
+        .map(id => ({ id, name: playerName(room, id) }));
+}
+
 function processNightAction(code, room, entry, actorId, payload) {
     const g = room.game;
     const aname = playerName(room, actorId);
@@ -626,6 +802,8 @@ function processNightAction(code, room, entry, actorId, payload) {
             // Wolf casts/changes their vote — resets all confirms
             g.wolfVotes[actorId] = payload.vote;
             g.wolfConfirms.clear();
+            // Active voting counts as activity — don't auto-skip deliberating wolves
+            if (g.autoMode) startAutoTurnTimer(code, room, entry.playerIds);
         } else if (payload.confirm) {
             const voteCounts     = getVoteCounts(g.wolfVotes);
             const wolfCount      = entry.playerIds.length;
@@ -761,6 +939,14 @@ function processNightAction(code, room, entry, actorId, payload) {
             g.nightLog.push(`Gendarm → ${playerName(room, payload.targetId)}`);
         }
 
+    } else if (entry.group === 'Zigeunerin') {
+        if (payload.targetId) {
+            g.zigeunerin_target = payload.targetId;
+            addEvent(g, `Die Zigeunerin spricht ihren Fluch aus.`);
+            g.nightLog.push(`Zigeunerin verflucht ${playerName(room, payload.targetId)}`);
+        }
+        g.zigeunerin_cursePending = false;
+
     } else if (entry.group === 'Glöckner') {
         if (payload.targetId === '__ring__') {
             g.gloeckner_used = true;
@@ -783,6 +969,14 @@ function processNightAction(code, room, entry, actorId, payload) {
             io.to(actorId).emit('role-changed', { roleId: chosenRole });
             addEvent(g, `Dieb hat eine neue Rolle übernommen.`);
             g.nightLog.push(`Dieb → ${ROLE_NAMES[chosenRole] ?? chosenRole}`);
+
+            // Rebuild the rest of tonight's queue so the new role still acts this night
+            const done       = g.nightQueue.slice(0, g.nightIdx + 1);
+            const doneGroups = new Set(done.map(e => e.group));
+            const remaining  = buildNightQueue(room.assignments, g.alive, g.round, g)
+                .filter(e => !doneGroups.has(e.group));
+            g.nightQueue = [...done, ...remaining];
+            addTransformedWolves(room, g);
         }
 
     } else {
@@ -860,14 +1054,19 @@ function endNight(code, room) {
         }
     }
     if (g.hexePoisonTarget) g.pendingDeaths.add(g.hexePoisonTarget);
-    // Händler protection: away player cannot be killed by any means (e.g. hexe poison)
-    if (g.haendler_away) g.pendingDeaths.delete(g.haendler_away);
 
     // EinsamerWolf: kills the chosen wolf
     if (g.einsamerWolf_target && g.alive.has(g.einsamerWolf_target) && isWolf(room, g.einsamerWolf_target)) {
         g.pendingDeaths.add(g.einsamerWolf_target);
         g.nightLog.push(`Einsamer Wolf tötet Werwolf: ${playerName(room, g.einsamerWolf_target)}`);
     }
+
+    // Zigeunerin: her curse kills the chosen wolf
+    if (g.zigeunerin_target && g.alive.has(g.zigeunerin_target) && isWolf(room, g.zigeunerin_target)) {
+        g.pendingDeaths.add(g.zigeunerin_target);
+        g.nightLog.push(`Zigeunerin-Fluch tötet Werwolf: ${playerName(room, g.zigeunerin_target)}`);
+    }
+    g.zigeunerin_cursePending = false;
 
     // Gendarm: kills the target; if the target is innocent, Gendarm also dies
     if (g.gendarm_target && g.alive.has(g.gendarm_target)) {
@@ -897,13 +1096,26 @@ function endNight(code, room) {
         }
     }
 
-    // Alter: silently survives the first wolf attack only (not hexe poison, not lover cascade)
+    // Händler protection: away player cannot be killed by any means tonight
+    // (runs AFTER all kill sources so none of them slips through)
+    if (g.haendler_away && g.pendingDeaths.delete(g.haendler_away)) {
+        g.nightLog.push(`Händler-Schutz: ${playerName(room, g.haendler_away)} war einkaufen — überlebt`);
+    }
+
+    // Alter: has 2 lives — each night-kill source costs one life; vote deaths are instant
     const alterId = Object.entries(room.assignments)
         .find(([id, rid]) => rid === 'Alter' && g.alive.has(id))?.[0];
-    if (alterId && g.nightVictim === alterId && g.pendingDeaths.has(alterId) && g.alter_lives > 1) {
-        g.pendingDeaths.delete(alterId);
-        g.alter_lives--;
-        g.nightLog.push(`Alter überlebt Wolfsangriff (${g.alter_lives} Leben übrig, geheim)`);
+    if (alterId && g.pendingDeaths.has(alterId)) {
+        const causes =
+            (g.nightVictim === alterId && g.hexeHealTarget !== alterId ? 1 : 0) +
+            (g.hexePoisonTarget === alterId ? 1 : 0) +
+            (g.gendarm_target === alterId ? 1 : 0) +
+            (dorfmatrazeId === alterId && g.dorfmatraze_sleep === g.nightVictim ? 1 : 0);
+        g.alter_lives -= Math.max(causes, 1);
+        if (g.alter_lives >= 1) {
+            g.pendingDeaths.delete(alterId);
+            g.nightLog.push(`Alter überlebt (${g.alter_lives} Leben übrig, geheim)`);
+        }
     }
 
     // Liebespaar: stirbt einer, stirbt der andere mit
@@ -917,6 +1129,8 @@ function endNight(code, room) {
             g.pendingDeaths.add(l1);
             g.nightLog.push(`Liebespaar: ${playerName(room, l1)} stirbt mit.`);
         }
+        // Even the lover cascade cannot kill the shopping player
+        if (g.haendler_away) g.pendingDeaths.delete(g.haendler_away);
     }
 
     // Build summary text
@@ -956,6 +1170,9 @@ function endNight(code, room) {
     }
     if (g.einsamerWolf_target && g.pendingDeaths.has(g.einsamerWolf_target)) {
         lines.push(`Ein Werwolf wurde in dieser Nacht getötet.`);
+    }
+    if (g.zigeunerin_target && g.pendingDeaths.has(g.zigeunerin_target)) {
+        lines.push(`Der Fluch der Zigeunerin hat einen Werwolf mit in den Tod gerissen.`);
     }
     if (g.gendarm_target) {
         const gname = playerName(room, g.gendarm_target);
@@ -1000,7 +1217,8 @@ function isWolf(room, id) {
     const rid = room.assignments[id];
     return WOLF_IDS.has(rid)
         || (rid === 'WildesKind'    && room.game.wildesKind_isWolf)
-        || (rid === 'JackTheRipper' && room.game.jack_isWolf);
+        || (rid === 'JackTheRipper' && room.game.jack_isWolf)
+        || (rid === 'JekylUndHyde'  && room.game.jekyllIsWolf);
 }
 
 function checkWinCondition(room) {
@@ -1034,8 +1252,8 @@ function checkWinCondition(room) {
         return { winner: 'wolves', message: 'Die Werwölfe haben gewonnen!' };
     }
 
-    // Villagers: all wolves eliminated
-    if (wolves.length === 0) {
+    // Villagers: all wolves eliminated — but not while the Einsame Wolf still lives
+    if (wolves.length === 0 && !(ewId && g.alive.has(ewId))) {
         return { winner: 'villagers', message: 'Die Dorfbewohner haben gewonnen!' };
     }
 
@@ -1058,16 +1276,7 @@ function startDay(code, room) {
 
     // Check win condition before continuing
     const win = checkWinCondition(room);
-    if (win) {
-        g.phase = 'game-over';
-        addEvent(g, win.message);
-        io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
-        narratorPush(g, {
-            phase: 'game-over', winner: win.winner, message: win.message,
-            events: g.events, players: playerStatusList(room, g),
-        });
-        return;
-    }
+    if (win) { endGame(code, room, win); return; }
 
     if (g.autoMode) {
         clearAutoTimers(g);
@@ -1083,12 +1292,36 @@ function startDay(code, room) {
 
 // ── Day phase functions ────────────────────────────────────────────────────────
 
+// Bär: brummt zu Tagesbeginn, wenn er im Sitzkreis (Beitrittsreihenfolge) neben einem Werwolf sitzt
+function checkBaerGrowl(code, room) {
+    const g = room.game;
+    const baerId = findPlayerByRole(room, 'Baer');
+    if (!baerId || !g.alive.has(baerId)) return;
+
+    const circle = room.players
+        .filter(p => g.alive.has(p.id) && p.id !== g.narratorId)
+        .map(p => p.id);
+    if (circle.length < 2) return;
+
+    const idx   = circle.indexOf(baerId);
+    const left  = circle[(idx - 1 + circle.length) % circle.length];
+    const right = circle[(idx + 1) % circle.length];
+    if (isWolf(room, left) || isWolf(room, right)) {
+        addEvent(g, 'Der Bär brummt — er riecht einen Werwolf in seiner Nähe!');
+        io.to(code).emit('baer-growl');
+    }
+}
+
 function startDayAccusation(code, room) {
     const g = room.game;
     g.phase = 'day-accusation';
     g.dayNominations = {};
     g.dayAccused = [];
     g.dayVotes = {};
+    g.dayAlsoDied = [];
+    g.dayEliminatedInfo = null;
+
+    checkBaerGrowl(code, room);
 
     // Pre-register non-voters as skipped so voting can complete without them
     if (g.haendler_away && g.alive.has(g.haendler_away)) {
@@ -1122,12 +1355,52 @@ function processDayNominations(code, room) {
 
     const tally = {};
     for (const nid of nominations) {
-        if (nid) tally[nid] = (tally[nid] ?? 0) + 1;
+        if (nid && g.alive.has(nid)) tally[nid] = (tally[nid] ?? 0) + 1;
     }
     const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
     g.dayAccused = sorted.slice(0, g.maxAccusations).map(([id]) => id);
 
+    // Zigeunerin: stirbt automatisch, sobald sie angeklagt wird — Fluch in der nächsten Nacht
+    const zigId = findPlayerByRole(room, 'Zigeunerin');
+    if (zigId && g.dayAccused.includes(zigId) && g.alive.has(zigId)) {
+        g.dayAccused = g.dayAccused.filter(id => id !== zigId);
+        addEvent(g, `${playerName(room, zigId)} (Zigeunerin) wurde angeklagt und stirbt — ihr Fluch wird die Nacht überdauern.`);
+        const deaths = applyDeath(code, room, zigId);
+        g.dayAlsoDied.push(...deaths);
+        g.zigeunerin_cursePending = true;
+
+        const win = checkWinCondition(room);
+        if (win) { endGame(code, room, win); return; }
+        if (deaths.some(d => d.roleId === 'Jaeger')) { startDayHunterShot(code, room); return; }
+        if (g.dayAccused.length === 0) { endDay(code, room, null, false); return; }
+    }
+
+    if (g.dayAccused.length === 0) {
+        addEvent(g, 'Niemand wurde angeklagt.');
+        endDay(code, room, null, true);
+        return;
+    }
+
     startDayVoting(code, room);
+}
+
+function countDayVoters(room, g) {
+    const liveNarrId = findPlayerByRole(room, 'Narr');
+    const narrOffset = (liveNarrId && g.alive.has(liveNarrId)) ? 1 : 0;
+    const awayOffset = (g.haendler_away && g.alive.has(g.haendler_away) && g.haendler_away !== liveNarrId) ? 1 : 0;
+    return g.alive.size - narrOffset - awayOffset;
+}
+
+function checkDayNominationsComplete(code, room) {
+    const g = room.game;
+    if (g.phase !== 'day-accusation') return;
+    if (Object.keys(g.dayNominations).length >= g.alive.size) processDayNominations(code, room);
+}
+
+function checkDayVotesComplete(code, room) {
+    const g = room.game;
+    if (g.phase !== 'day-voting') return;
+    if (Object.keys(g.dayVotes).length >= countDayVoters(room, g)) processDayVotes(code, room);
 }
 
 function startDayVoting(code, room) {
@@ -1144,7 +1417,7 @@ function processDayVotes(code, room) {
     const g = room.game;
     const tally = {};
     for (const vid of Object.values(g.dayVotes)) {
-        if (vid) tally[vid] = (tally[vid] ?? 0) + 1;
+        if (vid && g.alive.has(vid)) tally[vid] = (tally[vid] ?? 0) + 1;
     }
 
     const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
@@ -1169,61 +1442,157 @@ function processDayVotes(code, room) {
     endDay(code, room, eliminated, false, narrSurvived);
 }
 
-function endDay(code, room, eliminatedId, skipped, narrSurvived = false) {
+function endGame(code, room, win) {
+    const g = room.game;
+    g.phase = 'game-over';
+    clearAutoTimers(g);
+    addEvent(g, win.message);
+    io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
+    narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
+}
+
+// Jäger stirbt am Tag (Lynch, Zigeunerin-Kaskade, Liebespaar) → er darf noch schießen
+function startDayHunterShot(code, room) {
+    const g = room.game;
+    g.phase = 'hunter-day-shot';
+    const jaegerId   = findPlayerByRole(room, 'Jaeger');
+    const hunterName = playerName(room, jaegerId);
+    addEvent(g, `${hunterName} (Jäger) reißt jemanden mit in den Tod.`);
+    io.to(jaegerId).emit('hunter-shoot', { targets: hunterShootTargets(room, g) });
+    io.to(code).emit('phase-changed', { phase: 'hunter-day-shot', round: g.round, hunterName });
+    narratorPush(g, {
+        phase: 'hunter-day-shot', round: g.round, hunterName,
+        players: playerStatusList(room, g), events: g.events,
+    });
+    if (g.autoMode) {
+        clearAutoTimers(g);
+        g.autoTimer = setTimeout(() => {
+            if (room.game?.phase === 'hunter-day-shot') resolveDayHunterShot(code, room, null);
+        }, 45000);
+    }
+}
+
+function resolveDayHunterShot(code, room, targetId) {
+    const g = room.game;
+    clearAutoTimers(g);
+    let shotInfo = null;
+    if (targetId && g.alive.has(targetId) && targetId !== g.haendler_away) {
+        const jaegerId = findPlayerByRole(room, 'Jaeger');
+        addEvent(g, `${playerName(room, jaegerId)} (Jäger) erschoss ${playerName(room, targetId)}.`);
+        const deaths = applyDeath(code, room, targetId);
+        shotInfo = deaths[0] ?? null;
+        g.dayAlsoDied.push(...deaths.slice(1));
+    } else {
+        addEvent(g, 'Der Jäger hat nicht geschossen.');
+    }
+    finishDay(code, room, { hunterShot: shotInfo });
+}
+
+function finishDay(code, room, { skipped = false, narrSurvived = false, hunterShot = null } = {}) {
     const g = room.game;
 
-    if (eliminatedId) {
-        g.alive.delete(eliminatedId);
-        tryMagdTransform(code, room, eliminatedId);
-        tryWildesKindTransform(code, room, eliminatedId);
-    }
-
-    // Jäger shoots before win is checked — their shot could kill a wolf and reverse the outcome
-    if (eliminatedId && room.assignments[eliminatedId] === 'Jaeger') {
-        addEvent(g, `${playerName(room, eliminatedId)} (Jäger) reißt jemanden mit in den Tod.`);
-        g.phase = 'hunter-day-shot';
-        const jaegerInfo = {
-            id: eliminatedId,
-            name: playerName(room, eliminatedId),
-            roleId: 'Jaeger',
-            roleName: 'Jäger',
-        };
-        const shootTargets = [...g.alive].map(id => ({ id, name: playerName(room, id) }));
-        io.to(eliminatedId).emit('hunter-shoot', { targets: shootTargets });
-        io.to(code).emit('phase-changed', { phase: 'hunter-day-shot', round: g.round, hunterName: playerName(room, eliminatedId) });
-        narratorPush(g, {
-            phase: 'hunter-day-shot', round: g.round,
-            eliminated: jaegerInfo,
-            players: playerStatusList(room, g), events: g.events,
-        });
-        return;
-    }
-
     const win = checkWinCondition(room);
-    if (win) {
-        g.phase = 'game-over';
-        addEvent(g, win.message);
-        io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
-        narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
-        return;
-    }
+    if (win) { endGame(code, room, win); return; }
 
     g.phase = 'day-result';
-    const eliminatedInfo = eliminatedId ? {
-        id: eliminatedId,
-        name: playerName(room, eliminatedId),
-        roleId: room.assignments[eliminatedId],
-        roleName: roleName(room.assignments, eliminatedId),
-    } : null;
-
-    io.to(code).emit('phase-changed', { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped, narrSurvived: !!narrSurvived });
-    narratorPush(g, { phase: 'day-result', round: g.round, eliminated: eliminatedInfo, skipped: !!skipped, narrSurvived: !!narrSurvived, events: g.events, players: playerStatusList(room, g) });
+    const payload = {
+        phase: 'day-result', round: g.round,
+        eliminated:   g.dayEliminatedInfo,
+        alsoDied:     g.dayAlsoDied,
+        hunterShot,
+        skipped:      !!skipped,
+        narrSurvived: !!narrSurvived,
+    };
+    io.to(code).emit('phase-changed', payload);
+    narratorPush(g, { ...payload, events: g.events, players: playerStatusList(room, g) });
 
     if (g.autoMode) {
         clearAutoTimers(g);
         g.autoTimer = setTimeout(() => {
             if (room.game?.phase === 'day-result') doPhaseAdvance(code, room);
         }, 4000);
+    }
+}
+
+function endDay(code, room, eliminatedId, skipped, narrSurvived = false) {
+    const g = room.game;
+
+    if (eliminatedId) {
+        g.dayEliminatedInfo = {
+            id:       eliminatedId,
+            name:     playerName(room, eliminatedId),
+            roleId:   room.assignments[eliminatedId],
+            roleName: roleName(room.assignments, eliminatedId),
+        };
+        // applyDeath handles the lover cascade and role transforms
+        const deaths = applyDeath(code, room, eliminatedId);
+        g.dayAlsoDied.push(...deaths.filter(d => d.id !== eliminatedId));
+
+        // Jäger shoots before win is checked — their shot could kill a wolf and reverse the outcome.
+        // Triggers also when the Jäger dies as lover of the eliminated player.
+        if (deaths.some(d => d.roleId === 'Jaeger')) {
+            startDayHunterShot(code, room);
+            return;
+        }
+    }
+
+    finishDay(code, room, { skipped, narrSurvived });
+}
+
+// Removes a player who permanently left mid-game.
+// Treated like a death so no phase waits forever on their input.
+function handleGameLeave(code, room, playerId) {
+    const g = room.game;
+    if (!g || g.phase === 'game-over') return;
+
+    g.spectators?.delete(playerId);
+    const wasJaeger = room.assignments[playerId] === 'Jaeger';
+
+    if (g.alive.has(playerId)) {
+        addEvent(g, `${playerName(room, playerId)} hat das Spiel verlassen.`);
+        applyDeath(code, room, playerId);
+
+        // Drop their pending inputs
+        if (g.dayNominations) delete g.dayNominations[playerId];
+        if (g.dayVotes)       delete g.dayVotes[playerId];
+        if (g.wolfVotes)      delete g.wolfVotes[playerId];
+        g.wolfConfirms?.delete(playerId);
+        g.nightQueue?.forEach(entry => {
+            const idx = entry.playerIds.indexOf(playerId);
+            if (idx !== -1) entry.playerIds.splice(idx, 1);
+        });
+
+        const win = checkWinCondition(room);
+        if (win) { endGame(code, room, win); return; }
+    }
+
+    // Unblock whatever the game is currently waiting on
+    if (g.phase === 'hunter-night-shot' && wasJaeger) {
+        resolveNightHunterShot(code, room, null);
+    } else if (g.phase === 'hunter-day-shot' && wasJaeger) {
+        resolveDayHunterShot(code, room, null);
+    } else if (g.phase === 'night') {
+        const entry = g.nightQueue[g.nightIdx];
+        if (entry && !entry.done) {
+            if (entry.playerIds.length === 0) {
+                addEvent(g, `${entry.group} ist nicht mehr im Spiel.`);
+                advanceNight(code, room);
+            } else if (entry.actionType === 'kill') {
+                // Fewer wolves → new majority threshold, update everyone
+                broadcastWolfVotes(code, room, entry, g);
+            }
+        }
+    } else if (g.phase === 'day-accusation') {
+        checkDayNominationsComplete(code, room);
+    } else if (g.phase === 'day-voting') {
+        checkDayVotesComplete(code, room);
+    }
+
+    if (room.game === g && g.phase !== 'game-over') {
+        narratorPush(g, {
+            phase: g.phase, round: g.round,
+            events: g.events, players: playerStatusList(room, g),
+        });
     }
 }
 
@@ -1332,7 +1701,7 @@ io.on('connection', (socket) => {
         const narratorPlayerId = room.designatedNarrator ?? (room.narratorMode ? room.hostId : null);
         const effectiveNarratorMode = !!narratorPlayerId;
         const n = room.players.length - (effectiveNarratorMode ? 1 : 0);
-        if (room.players.length < 3)           { socket.emit('error', { message: 'Mindestens 3 Spieler werden benötigt.' }); return; }
+        if (n < 3)                             { socket.emit('error', { message: 'Mindestens 3 Mitspieler (ohne Erzähler) werden benötigt.' }); return; }
         if (!room.selectedCards.some(id => WOLF_IDS.has(id))) { socket.emit('error', { message: 'Mindestens 1 Werwolf muss ausgewählt sein.' }); return; }
         if (!room.players.every(p => p.isHost || p.isReady)) { socket.emit('error', { message: 'Noch nicht alle Spieler sind bereit.' }); return; }
 
@@ -1359,42 +1728,7 @@ io.on('connection', (socket) => {
 
         room.phase       = 'game';
         room.assignments = assignments;
-        room.game = {
-            round:    1,
-            phase:    'day-prep',
-            narratorId: narratorPlayerId,
-            autoMode:   !narratorPlayerId,
-            autoTimer:  null,
-            alive:    new Set(Object.keys(assignments)),
-            events:   [],
-            hexeUsedHeal:   false,
-            hexeUsedPoison: false,
-            nightVictim:    null,
-            lovers:         null,
-            nightQueue:     [],
-            nightIdx:       -1,
-            pendingDeaths:  new Set(),
-            nightLog:       [],
-            maxAccusations: room.maxAccusations ?? 3,
-            dayNominations: {},
-            dayAccused:     [],
-            dayVotes:       {},
-            magd_herr:              null,
-            wildesKind_idol:        null,
-            wildesKind_isWolf:      false,
-            alter_lives:            2,
-            silberschmied_protected: null,
-            einsamerWolf_target:    null,
-            jack_target:            null,
-            jack_isWolf:            false,
-            gendarm_target:         null,
-            gendarm_used:           false,
-            gloeckner_used:         false,
-            diebOptions:            null,
-            spectators:             new Set(),
-            villageChat:            [],
-            wolfChat:               [],
-        };
+        room.game        = freshGameState(room, narratorPlayerId, assignments);
 
         // Dieb: generate 2 extra role options from unassigned roles
         const diebId = Object.entries(assignments).find(([, rid]) => rid === 'Dieb')?.[0];
@@ -1442,6 +1776,7 @@ io.on('connection', (socket) => {
         const narratorPlayerId = room.designatedNarrator ?? (room.narratorMode ? room.hostId : null);
         const effectiveNarratorMode = !!narratorPlayerId;
         const n = room.players.length - (effectiveNarratorMode ? 1 : 0);
+        if (n < 3) { socket.emit('error', { message: 'Mindestens 3 Mitspieler (ohne Erzähler) werden benötigt.' }); return; }
 
         // Fehlende Karten mit Dorfbewohnern auffüllen
         const paddedCards = [...room.selectedCards];
@@ -1459,42 +1794,7 @@ io.on('connection', (socket) => {
         }
 
         room.assignments = assignments;
-        room.game = {
-            round:          1,
-            phase:          'day-prep',
-            narratorId:     narratorPlayerId,
-            autoMode:       !narratorPlayerId,
-            autoTimer:      null,
-            alive:          new Set(Object.keys(assignments)),
-            events:         [],
-            hexeUsedHeal:   false,
-            hexeUsedPoison: false,
-            nightVictim:    null,
-            lovers:         null,
-            nightQueue:     [],
-            nightIdx:       -1,
-            pendingDeaths:  new Set(),
-            nightLog:       [],
-            maxAccusations: room.maxAccusations ?? 3,
-            dayNominations: {},
-            dayAccused:     [],
-            dayVotes:       {},
-            magd_herr:              null,
-            wildesKind_idol:        null,
-            wildesKind_isWolf:      false,
-            alter_lives:            2,
-            silberschmied_protected: null,
-            einsamerWolf_target:    null,
-            jack_target:            null,
-            jack_isWolf:            false,
-            gendarm_target:         null,
-            gendarm_used:           false,
-            gloeckner_used:         false,
-            diebOptions:            null,
-            spectators:             new Set(),
-            villageChat:            [],
-            wolfChat:               [],
-        };
+        room.game        = freshGameState(room, narratorPlayerId, assignments);
 
         // Dieb: generate 2 extra role options from unassigned roles
         const diebIdR = Object.entries(assignments).find(([, rid]) => rid === 'Dieb')?.[0];
@@ -1654,7 +1954,7 @@ io.on('connection', (socket) => {
             total: g.alive.size,
         });
 
-        if (nominations.length >= g.alive.size) processDayNominations(code, room);
+        checkDayNominationsComplete(code, room);
     });
 
     socket.on('day-vote-cast', ({ targetId }) => {
@@ -1674,10 +1974,7 @@ io.on('connection', (socket) => {
         const counts = {};
         for (const vid of Object.values(g.dayVotes)) { counts[vid] = (counts[vid] ?? 0) + 1; }
         const totalVoted   = Object.keys(g.dayVotes).length;
-        const liveNarrId   = findPlayerByRole(room, 'Narr');
-        const narrOffset   = (liveNarrId && g.alive.has(liveNarrId)) ? 1 : 0;
-        const awayOffset   = (g.haendler_away && g.alive.has(g.haendler_away) && g.haendler_away !== liveNarrId) ? 1 : 0;
-        const totalVoters  = g.alive.size - narrOffset - awayOffset;
+        const totalVoters  = countDayVoters(room, g);
         io.to(code).emit('day-vote-update', { counts, totalVoted, totalVoters });
         narratorPush(g, {
             phase: 'day-voting', round: g.round,
@@ -1685,7 +1982,7 @@ io.on('connection', (socket) => {
             players: playerStatusList(room, g), events: g.events,
         });
 
-        if (totalVoted >= totalVoters) processDayVotes(code, room);
+        checkDayVotesComplete(code, room);
     });
 
     // ─ In-game chat ──────────────────────────────────────────────────────────
@@ -1740,51 +2037,10 @@ io.on('connection', (socket) => {
 
         const jaegerId = findPlayerByRole(room, 'Jaeger');
         if (jaegerId !== socket.id) return;
-        if (g.phase !== 'hunter-night-shot' && g.phase !== 'hunter-day-shot') return;
         if (!g.alive.has(targetId)) return;
 
-        g.alive.delete(targetId);
-        tryMagdTransform(code, room, targetId);
-        tryWildesKindTransform(code, room, targetId);
-        const shotInfo = {
-            id:       targetId,
-            name:     playerName(room, targetId),
-            roleId:   room.assignments[targetId],
-            roleName: roleName(room.assignments, targetId),
-        };
-        addEvent(g, `${playerName(room, jaegerId)} (Jäger) erschoss ${shotInfo.name}.`);
-
-        if (g.phase === 'hunter-night-shot') {
-            const remainingDeaths = (g.nightSummary?.deaths ?? []).filter(d => d.id !== jaegerId);
-            io.to(code).emit('morning-full-reveal', { deaths: remainingDeaths, hunterShot: shotInfo });
-            setTimeout(() => startDay(code, room), 2500);
-        } else {
-            const win = checkWinCondition(room);
-            if (win) {
-                g.phase = 'game-over';
-                addEvent(g, win.message);
-                io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
-                narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
-                return;
-            }
-
-            g.phase = 'day-result';
-            const jaegerInfo = {
-                id:       jaegerId,
-                name:     playerName(room, jaegerId),
-                roleId:   'Jaeger',
-                roleName: 'Jäger',
-            };
-            io.to(code).emit('phase-changed', {
-                phase: 'day-result', round: g.round,
-                eliminated: jaegerInfo, skipped: false, hunterShot: shotInfo,
-            });
-            narratorPush(g, {
-                phase: 'day-result', round: g.round,
-                eliminated: jaegerInfo, hunterShot: shotInfo, skipped: false,
-                events: g.events, players: playerStatusList(room, g),
-            });
-        }
+        if (g.phase === 'hunter-night-shot')     resolveNightHunterShot(code, room, targetId);
+        else if (g.phase === 'hunter-day-shot')  resolveDayHunterShot(code, room, targetId);
     });
 
     socket.on('phase-skip', () => {
@@ -1841,6 +2097,8 @@ io.on('connection', (socket) => {
         if (!room.disconnectTimers) room.disconnectTimers = new Map();
         const timer = setTimeout(() => {
             const wasNarrator = room.game && room.game.narratorId === socket.id;
+            // Resolve game state BEFORE removing the player (names must still resolve)
+            if (room.game && !wasNarrator) handleGameLeave(code, room, socket.id);
             room.players = room.players.filter(p => p.id !== socket.id);
             if (room.players.length === 0) { rooms.delete(code); return; }
             if (room.hostId === socket.id) {
@@ -1881,6 +2139,12 @@ io.on('connection', (socket) => {
                         g.autoTimer = setTimeout(() => {
                             if (room.game?.phase === 'day-result') doPhaseAdvance(code, room);
                         }, 2000);
+                    } else if (g.phase === 'hunter-night-shot' || g.phase === 'hunter-day-shot') {
+                        // Jäger bekommt noch Zeit zu schießen, dann geht es automatisch weiter
+                        g.autoTimer = setTimeout(() => {
+                            if (room.game?.phase === 'hunter-night-shot')     resolveNightHunterShot(code, room, null);
+                            else if (room.game?.phase === 'hunter-day-shot') resolveDayHunterShot(code, room, null);
+                        }, 45000);
                     }
                 }, 1500);
             }

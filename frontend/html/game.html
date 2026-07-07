@@ -43,6 +43,7 @@
             <button class="game-btn game-btn--info" id="info-btn" aria-label="Regelinfo">&#9432; Info</button>
             <button class="game-btn game-btn--love" id="love-recall-btn" hidden>&#9829; Liebespaar</button>
             <button class="game-btn game-btn--katz-maus" id="katz-maus-recall-btn" hidden>K &amp; M</button>
+            <button class="game-btn game-btn--jekyll" id="jekyll-recall-btn" hidden>J &amp; H</button>
         </div>
 
         <!-- Spectator panel: shown after the player has died -->
@@ -62,7 +63,22 @@
             <p class="katz-maus-panel__text" id="katz-maus-panel-text"></p>
         </div>
 
+        <!-- Jekyll-und-Hyde-Info: aktuelle Seite (wechselt jede Nacht) -->
+        <div class="jekyll-panel" id="jekyll-panel" hidden>
+            <p class="jekyll-panel__text" id="jekyll-panel-text"></p>
+        </div>
+
     </main>
+
+    <!-- Bär-Toast: der Bär brummt zu Tagesbeginn -->
+    <div class="baer-toast" id="baer-toast" hidden>
+        &#128059; Der B&auml;r brummt &mdash; ein Werwolf sitzt neben ihm!
+    </div>
+
+    <!-- Zurück-Knopf-Hinweis -->
+    <div class="baer-toast back-toast" id="back-toast" hidden>
+        Du bist mitten im Spiel &mdash; schlie&szlig;e den Tab, wenn du wirklich gehen willst.
+    </div>
 
     <!-- Game over screen -->
     <div class="game-over-overlay" id="game-over-overlay" hidden>
@@ -242,7 +258,7 @@
                 <button class="gchat-tab is-active" data-tab="village">Dorf</button>
                 <button class="gchat-tab" data-tab="wolf" id="gchat-wolf-tab" hidden>Rudel &#x1F43A;</button>
             </div>
-            <button class="gchat-panel__close" id="gchat-close">&#x2715;</button>
+            <button class="gchat-panel__close" id="gchat-close">Schlie&szlig;en &#x2715;</button>
         </div>
         <div class="gchat-log" id="gchat-log-village"><p class="gchat-empty">Noch keine Nachrichten.</p></div>
         <div class="gchat-log" id="gchat-log-wolf" hidden><p class="gchat-empty">Noch keine Nachrichten im Rudel.</p></div>

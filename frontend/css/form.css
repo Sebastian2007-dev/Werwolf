@@ -96,6 +96,13 @@ body::before {
     text-transform: uppercase;
 }
 
+/* Per QR-Code vorbefüllter Raumcode: grün markiert und gesperrt */
+.form__input.is-prefilled {
+    background: rgba(80, 180, 100, 0.08);
+    border-color: rgba(80, 180, 100, 0.45);
+    color: #7ad88a;
+}
+
 .form__error {
     font-size: 0.82rem;
     color: #e05555;

@@ -67,3 +67,32 @@
 - accusations-setting: natives `<input type=number>` durch custom Spinner `− [Wert] +` ersetzt (lobby.html)
 - num-spin CSS in lobby.css: Buttons im Design-Stil, nativer Spinner per -webkit-appearance versteckt
 - lobby.js: accusations-minus / accusations-plus Buttons senden set-max-accusations über Socket
+
+## [2026-07-07 13:10] UI-Fixes im Zuge des Logik-Bugfixings
+- game.js: Seherin-Ergebnis wird nicht mehr sofort vom Warte-Screen überdeckt — bleibt sichtbar bis "Verstanden ✓" (viewingResult-Flag)
+- game.js: Wolf-Chat-Tab erscheint jetzt auch, wenn Dieb eine Wolfskarte nimmt oder die Ergebene Magd eine Wolfsrolle erbt
+- game.js: Jekyll-&-Hyde-Panel (nächtlicher Seitenwechsel, lila) + J&H-Recall-Button; Rudel-Chat nur in Hyde-Nächten sichtbar
+- game.js: Bär-Toast ("Der Bär brummt") zu Tagesbeginn, blendet nach 7s aus
+- game.js: Tagesergebnis zeigt zusätzliche Tote (alsoDied: Liebespartner, Zigeunerin) an; Mitgestorbene wechseln sofort in den Zuschauermodus
+- game.js: tote Zigeunerin darf ihren Fluch-Zug im Night-Overlay ausführen; Overlay schließt danach sauber
+- narrator.js: ReferenceError behoben (advanceBtn → nextBtn) — Auto-Modus-Banner erscheint jetzt
+- narrator.js: "Weiter"-Button bleibt in Nachtauswertung/Tagesergebnis sichtbar (Modal-per-Backdrop-schließen sperrte vorher den Erzähler aus)
+- narrator.js: neue Buttons "Jäger überspringen →" (Jäger-Phasen) und "Phase abschließen →" (Anklage/Abstimmung erzwingen)
+- narrator.js: Tagesergebnis-Modal zeigt Narrenfreiheit und zusätzliche Tote; Sieger-Label "Einsamer Wolf" ergänzt; Phase-Typo day-vote → day-voting
+- game.html/game.css: Jekyll-Panel, J&H-Button (lila Akzent) und Bär-Toast ergänzt
+
+## [2026-07-07 13:35] Zurück-Knopf abgefangen + Bereit-Button eindeutig gemacht
+- game.js: Browser-/Handy-Zurück wirft Spieler nicht mehr aus dem Spiel (History-Trap): Chat offen → Chat schließt sich; sonst bleibt die Seite offen und ein Toast erklärt "Tab schließen zum Verlassen"
+- game.js: Escape schließt den In-Game-Chat; Chat-Schließen-Logik zentral in gchatClose()
+- game.html/game.css: Chat-Schließen-Knopf deutlich sichtbarer — Pill-Button mit Beschriftung "Schließen ✕" statt kleinem grauen ✕
+- lobby.js: History-Trap für die Lobby — Zurück schließt Mobile-Chat bzw. QR-Modal statt die Lobby zu verlassen
+- narrator.js: History-Trap — Erzähler kann nicht versehentlich per Zurück das Spiel verlassen
+- lobby.html/lobby.js: Bereit-Button umbenannt ("Bereit? Hier tippen!" → nach Klick "✓ Du bist bereit") mit sofortigem visuellen Feedback ohne Server-Roundtrip
+- lobby.css: Bereit-Button pulsiert golden solange nicht bereit; nach Klick sattes Grün mit Glow — Zustandswechsel unübersehbar
+- lobby.html/lobby.js/lobby.css: neue Footer-Hinweiszeile — Spieler sehen "Tippe auf Bereit, sonst kann das Spiel nicht starten!", Host sieht "Warte auf Bereit von: …" bzw. "Wähle mindestens eine Werwolf-Karte aus."
+- lobby.js/lobby.css: Spielerliste zeigt statt "…" jetzt klar "nicht bereit" (orange, kursiv) bzw. "✓ bereit" (grün)
+
+## [2026-07-07 13:50] QR-Code-Beitritt gefixt
+- join.js: liest jetzt den ?code=-Parameter aus der URL — vorher erzeugte der QR-Code zwar den Link, aber das Formular blieb leer und der Code musste von Hand eingetippt werden
+- Bei gescanntem Code: Feld vorbefüllt + gesperrt (grün markiert), Untertitel "Raum XXXXXX erkannt — gib nur noch deinen Namen ein.", Fokus springt direkt ins Namensfeld
+- form.css: Stil .is-prefilled für den erkannten Raumcode

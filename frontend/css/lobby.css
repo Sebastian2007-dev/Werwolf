@@ -220,6 +220,7 @@ body {
 }
 
 .player-item.is-ready .player-item__status { color: #60c070; }
+.player-item__status.is-waiting { color: #d0a050; font-style: italic; }
 .player-item.is-narrator { border-color: rgba(100,160,220,0.35); }
 
 .pi-narrator, .pi-kick {
@@ -480,16 +481,26 @@ body {
     transition: opacity var(--transition), transform var(--transition);
 }
 
+/* Noch nicht bereit: gold + pulsierend — der Button soll unübersehbar sein */
 .lf-btn--ready {
-    background: rgba(255,255,255,0.08);
-    border: 1px solid var(--border);
-    color: var(--text);
+    background: rgba(200,170,110,0.14);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    animation: ready-pulse 1.8s ease-in-out infinite;
 }
 
+@keyframes ready-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(200,170,110,0.45); }
+    55%      { box-shadow: 0 0 0 10px rgba(200,170,110,0); }
+}
+
+/* Bereit: sattes Grün, Puls aus — eindeutiger Zustandswechsel nach dem Klick */
 .lf-btn--ready.is-active {
-    background: rgba(80,180,100,0.15);
-    border-color: rgba(80,180,100,0.4);
-    color: #60c070;
+    background: rgba(80,180,100,0.25);
+    border-color: rgba(80,180,100,0.65);
+    color: #7ad88a;
+    animation: none;
+    box-shadow: 0 0 14px rgba(80,180,100,0.25);
 }
 
 .lf-btn--start {
@@ -505,6 +516,15 @@ body {
 
 .lf-btn:not(:disabled):hover { opacity: 0.85; transform: translateY(-1px); }
 .lf-btn:not(:disabled):active { transform: translateY(0); }
+
+/* Statuszeile im Footer (Bereit-Hinweis / Host: auf wen wird gewartet) */
+.lobby-footer__hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-align: center;
+    margin: 0 0 0.4rem;
+}
+.lobby-footer__hint[hidden] { display: none; }
 
 /* Max accusations setting */
 .accusations-setting[hidden] { display: none; }
