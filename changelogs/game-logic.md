@@ -38,3 +38,30 @@
 - Amor-Siegbedingung: roles.md sagt unklar „als letzte 4 Personen" — implementiert ist Sieg als letzte 2 Überlebende.
 - Katz & Maus: kennen einander weiterhin von Spielbeginn an (roles.md „müssen versuchen sich gegenseitig auszuwählen" hätte auch eine Such-Mechanik sein können) — keine eigene Mechanik implementiert.
 - Einsamer Wolf + 0 Werwölfe: Spiel läuft als reines Lynch-Spiel weiter, bis er stirbt (Dorfsieg) oder allein übrig ist (Solo-Sieg).
+
+## [2026-07-09 11:40] Computer-Spieler (Bots)
+- Der Host kann in der Lobby über "+ Computer-Spieler" Bots hinzufügen (max. 20 Spieler pro Raum); entfernen über den ✕-Knopf wie beim Kicken
+- Bots erscheinen als "🤖 Name" (deutscher Namenspool), sind immer bereit und zählen für die Mindestspielerzahl
+- backend/server.js, neuer Abschnitt "Bot players": Bots sind normale room.players-Einträge mit isBot: true und ID ohne Socket (io.to(botId) ist ein No-Op); der Server handelt für sie mit Zufalls-Verzögerungen (1,5–4,5 s)
+- Nacht-KI: alle Rollen abgedeckt — Seherin/Dorfmatratze/Amor/Magd/Wildes Kind/usw. wählen zufällige Ziele, Hexe heilt zu 50 % und vergiftet zu 15 %, Glöckner läutet zu 20 %, Gendarm verhaftet zu 15 %, Dieb tauscht zu 50 %
+- Werwolf-Bots: schließen sich per scheduleBotWolfSync dem führenden Kandidaten an und bestätigen die Mehrheit — funktioniert rein unter Bots und gemischt mit menschlichen Wölfen (Bots folgen der menschlichen Stimme)
+- Tag-KI: Bots klagen zu 60 % an (Werwolf-Bots schonen das Rudel) oder überspringen, stimmen über Angeklagte ab (Wolf-Bots bevorzugen Nicht-Wölfe); Bot-Jäger schießt nach kurzer Pause auf ein Zufallsziel
+- Anklage-/Abstimmungslogik aus den Socket-Handlern in castDayNomination/castDayVote extrahiert (von Mensch und Bot gemeinsam genutzt)
+- Schutzregeln: Bots können nicht Erzähler werden; Host-Rolle geht bei Disconnect nie an einen Bot; ein Raum nur mit Bots wird aufgelöst; Bot-Timer werden bei Spielende/Reset/Raumauflösung aufgeräumt
+- Getestet: komplettes Auto-Spiel mit 1 Mensch + 6 Bots lief bis zum Dorfbewohner-Sieg durch (Amor, Wolfsvotum, Hexe, Anklagen, Abstimmungen, Siegbedingung)
+
+## [2026-07-09 12:00] Tag-Abstimmung überarbeitet: Stichwahl, Transparenz, Kontext
+- Stichwahl bei Gleichstand: Endet der erste Wahlgang mit Patt an der Spitze, folgt automatisch eine Stichwahl zwischen den Erstplatzierten (einmalig — endet auch sie im Patt, stirbt niemand). Vorher passierte bei Gleichstand einfach gar nichts.
+- server.js: processDayVotes erkennt das Patt und ruft startDayVoting(code, room, runoff=true) mit den punktgleichen Kandidaten erneut auf; g.dayRunoff verhindert Endlosschleifen; Ereignislog-Einträge für Stichwahl und Stichwahl-Patt
+- Angeklagten-Liste mit Kontext: Jeder Kandidat zeigt jetzt, wie oft er angeklagt wurde (in der Stichwahl: seine Stimmen aus dem 1. Wahlgang)
+- day-result enthält jetzt voteResult (Stimmverteilung mit Namen) und wasRunoff — Spieler und Erzähler sehen das Abstimmungsergebnis im Detail
+- Bots nehmen automatisch an der Stichwahl teil (scheduleBotDayVotes läuft bei jedem Wahlgang)
+- Getestet: deterministischer 4-Spieler-Test (2:2-Patt → Stichwahl → 4:0-Eliminierung) plus komplettes Bot-Spiel als Regression, in dem zufällig eine echte Stichwahl auftrat
+
+## [2026-07-09 12:35] Zuschauer-Modus für tote Spieler repariert
+- Bugfix (Race-Condition): Nacht-Tote wurden nie Zuschauer. Der Client meldete sich beim Morgen-Screen per join-spectator an, aber der Server entfernte die Toten erst 2,5 s später aus g.alive (startDay) — die Anmeldung wurde deshalb stillschweigend verworfen und das Ereignisprotokoll blieb für immer leer.
+- Fix 1: startDay trägt Nacht-Tote jetzt serverseitig direkt in g.spectators ein und sendet ihnen you-are-dead (vorher fehlte beides bei Nacht-Toden komplett)
+- Fix 2: applyDeath (Tages-Tode, Jäger-Schuss, Liebespaar) trägt Tote ebenfalls sofort in g.spectators ein
+- Fix 3: join-spectator akzeptiert auch Spieler in pendingDeaths und sendet sofort einen Schnappschuss (Phase, Events, Spielerliste) — kein Warten mehr auf das nächste Ereignis
+- Bots werden nicht in g.spectators aufgenommen
+- Getestet: 4-Spieler-Test — Nacht-Opfer erhält you-are-dead, wird Zuschauer und empfängt sofort Events + Rollenliste

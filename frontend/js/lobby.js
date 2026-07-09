@@ -29,6 +29,7 @@ const qrCanvas              = document.getElementById('qr-canvas');
 const qrUrl                 = document.getElementById('qr-url');
 const playerList            = document.getElementById('player-list');
 const playerCount           = document.getElementById('player-count');
+const addBotBtn             = document.getElementById('add-bot-btn');
 const cardGrid              = document.getElementById('card-grid');
 const cardCounter           = document.getElementById('card-counter');
 const balanceWarn           = document.getElementById('balance-warning');
@@ -86,6 +87,7 @@ socket.on('room-created', ({ roomCode: code }) => {
     startBtn.hidden = false;
     narratorToggle.hidden = false;
     accusationsSetting.hidden = false;
+    addBotBtn.hidden = false;
     // Persist code in URL so a page reload rejoins the same room
     const url = new URL(window.location.href);
     url.searchParams.set('code', code);
@@ -148,10 +150,10 @@ function renderPlayers(players) {
         const reqRole = p.requestedCard ? ROLES.find(r => r.id === p.requestedCard) : null;
         const isDesNarrator = p.id === designatedNarrator;
         const hostActions = (isHost && !isMe && !p.isHost) ? `
-            <button class="pi-narrator${isDesNarrator ? ' is-active' : ''}" data-id="${p.id}" title="${isDesNarrator ? 'Erzähler-Rolle entfernen' : 'Als Erzähler festlegen'}">&#128214;</button>
-            <button class="pi-kick" data-id="${p.id}" title="Spieler kicken">&#x2715;</button>` : '';
+            ${!p.isBot ? `<button class="pi-narrator${isDesNarrator ? ' is-active' : ''}" data-id="${p.id}" title="${isDesNarrator ? 'Erzähler-Rolle entfernen' : 'Als Erzähler festlegen'}">&#128214;</button>` : ''}
+            <button class="pi-kick" data-id="${p.id}" title="${p.isBot ? 'Bot entfernen' : 'Spieler kicken'}">&#x2715;</button>` : '';
         return `
-        <li class="player-item${p.isReady ? ' is-ready' : ''}${isMe ? ' is-me' : ''}${isDesNarrator ? ' is-narrator' : ''}">
+        <li class="player-item${p.isReady ? ' is-ready' : ''}${isMe ? ' is-me' : ''}${isDesNarrator ? ' is-narrator' : ''}${p.isBot ? ' is-bot' : ''}">
             ${p.isHost ? '<span class="player-item__crown" title="Spielleiter">&#9812;</span>' : ''}
             <span class="player-item__name">${h(p.name)}${isMe ? ' <em style="opacity:.5;font-style:normal">(du)</em>' : ''}${isDesNarrator ? ' <em style="opacity:.6;font-style:normal">(Erzähler)</em>' : ''}</span>
             ${reqRole ? `<span class="player-item__request">${h(reqRole.name)}</span>` : ''}
@@ -343,6 +345,8 @@ startBtn.addEventListener('click', () => {
     lobbyError.textContent = '';
     socket.emit('start-game');
 });
+
+addBotBtn.addEventListener('click', () => socket.emit('add-bot'));
 
 chatForm.addEventListener('submit', (e) => {
     e.preventDefault();

@@ -106,3 +106,23 @@
 - narrator.css: Weiter-Button klebt auf Mobile unten am Bildschirmrand (sticky), Header umbruchfähig, Buttons min. 48px
 - form.css: 100dvh, Formular-Karte auf Mobile oben ausgerichtet (springt nicht bei geöffneter Tastatur), Zurück-Link mit größerer Tap-Fläche
 - join.html: autocapitalize=characters am Raumcode-Feld (Handy-Tastatur startet mit Großbuchstaben)
+
+## [2026-07-09 11:40] Lobby-UI für Computer-Spieler
+- lobby.html/lobby.js: "+ Computer-Spieler"-Button unter der Spielerliste (nur Host), sendet add-bot
+- Bots in der Spielerliste: 🤖-Name in Blau, immer "bereit", Entfernen über ✕; kein Erzähler-Knopf für Bots
+- lobby.css: gestrichelter Add-Bot-Button im Gold-Stil, min. 44px Touch-Höhe
+
+## [2026-07-09 12:00] Voting-UI: Live-Stimmen, Rollen-Aufdeckung, Stichwahl-Ansicht
+- game.html/game.js: Abstimmungs-UI zeigt "Stichwahl" mit eigenem Hinweistext, wenn der Server einen zweiten Wahlgang startet
+- Live-Stimmenzähler (rote Badges) an den Angeklagten-Buttons während der Abstimmung — vorher sah niemand Zwischenstände
+- Jeder Angeklagte zeigt seine Anklage-Zahl (bzw. Stimmen aus Wahlgang 1) als Untertitel
+- Warnhinweis "⚠ Du stehst selbst zur Wahl!", wenn der eigene Name auf der Liste steht (eigener Button orange umrandet)
+- Tagesergebnis zeigt jetzt die Rolle des Eliminierten ("… wurde eliminiert — Hexe.") und die komplette Stimmverteilung; Erzähler-Modal ebenso (inkl. "Es kam zur Stichwahl.")
+- game.css: Stimmen-Badges in Ziel-Listen sitzen jetzt rechts im Button vertikal zentriert (galt vorher nur inline, rutschte mit Untertitel in die zweite Zeile)
+
+## [2026-07-09 12:35] Geisterblick: neue Zuschauer-Ansicht für tote Spieler
+- Das karge Ereignis-Kästchen ist jetzt der "Geisterblick": Tote sehen alles
+- Live-Statuszeile: aktuelle Phase bzw. wer nachts gerade am Zug ist ("Nacht 3 — Werwölfe sind am Zug")
+- Rollen-Aufdeckung: alle Spieler als Chips mit ihrer wahren Rolle, Tote durchgestrichen, der eigene Eintrag gold umrandet
+- Ereignisprotokoll mit Zeitstempeln, Phasen-Einträge (Nacht/Tag/Stichwahl) gold hervorgehoben, Auto-Scroll nur wenn man unten steht
+- game.html: spectator-panel um Status-Zeile und Rollen-Grid erweitert; game.js: narrator-update-Handler komplett neu; game.css: Geisterblick-Styles

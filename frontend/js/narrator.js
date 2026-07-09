@@ -71,7 +71,7 @@ socket.on('narrator-update', (data) => {
     if (data.events)  renderLog(data.events);
     updateButtons(data.phase, data.activeEntry, data.waiting);
     if (data.phase === 'night-summary' && data.summary) showSummary(data.summary);
-    if (data.phase === 'day-result') showDayResult(data.eliminated, data.skipped, data.hunterShot, data.alsoDied, data.narrSurvived);
+    if (data.phase === 'day-result') showDayResult(data.eliminated, data.skipped, data.hunterShot, data.alsoDied, data.narrSurvived, data.voteResult, data.wasRunoff);
 });
 
 socket.on('phase-changed', ({ phase, round }) => {
@@ -289,7 +289,7 @@ dayResultModal.addEventListener('click', (e) => {
     if (e.target === dayResultModal) dayResultModal.close();
 });
 
-function showDayResult(eliminated, skipped, hunterShot, alsoDied, narrSurvived) {
+function showDayResult(eliminated, skipped, hunterShot, alsoDied, narrSurvived, voteResult, wasRunoff) {
     dayResultBody.innerHTML = '';
     const addLine = (text, cls = '') => {
         const p = document.createElement('p');
@@ -297,6 +297,9 @@ function showDayResult(eliminated, skipped, hunterShot, alsoDied, narrSurvived) 
         p.textContent = text;
         dayResultBody.appendChild(p);
     };
+    if (wasRunoff) {
+        addLine('Es kam zur Stichwahl.');
+    }
     if (narrSurvived) {
         addLine('Der Narr überlebt die Abstimmung — Narrenfreiheit.');
     } else if (skipped) {
@@ -312,6 +315,9 @@ function showDayResult(eliminated, skipped, hunterShot, alsoDied, narrSurvived) 
     (alsoDied ?? []).forEach(d => {
         addLine(`${d.name} (${d.roleName}) stirbt ebenfalls.`, 'is-death');
     });
+    if (voteResult?.length > 0 && !skipped) {
+        addLine('Stimmen: ' + voteResult.map(v => `${v.name} ${v.votes}`).join(' · '));
+    }
     dayResultModal.showModal();
 }
 

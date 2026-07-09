@@ -286,6 +286,191 @@ function startAutoTurnTimer(code, room, playerIds) {
     }, 30000);
 }
 
+// ── Bot players (Computer-Mitspieler) ────────────────────────────────────────
+// Bots sind normale Einträge in room.players mit isBot: true und einer ID ohne
+// Socket dahinter (io.to(botId) ist ein No-Op). Der Server handelt für sie mit
+// kurzen Zufalls-Verzögerungen, damit sich ihre Züge natürlich anfühlen.
+
+const BOT_NAMES = [
+    'Alwin', 'Berta', 'Cäsar', 'Dora', 'Emil', 'Frieda', 'Gustav', 'Heidi',
+    'Ida', 'Jonas', 'Karla', 'Ludwig', 'Martha', 'Nepomuk', 'Olga', 'Paul',
+    'Quirin', 'Rosa', 'Siegfried', 'Thea',
+];
+let botIdCounter = 0;
+
+function isBotPlayer(room, id) {
+    return !!room.players.find(p => p.id === id)?.isBot;
+}
+
+function createBot(room) {
+    const used = new Set(room.players.map(p => p.name));
+    const free = BOT_NAMES.filter(n => !used.has(`🤖 ${n}`));
+    const base = free.length ? free[Math.floor(Math.random() * free.length)] : `Bot ${botIdCounter + 1}`;
+    botIdCounter++;
+    return {
+        id: `bot_${botIdCounter}_${Date.now().toString(36)}`,
+        name: `🤖 ${base}`,
+        isHost: false, isReady: true, isBot: true, requestedCard: null,
+    };
+}
+
+function addBotTimer(g, fn, ms) {
+    if (!g.botTimers) g.botTimers = [];
+    g.botTimers.push(setTimeout(fn, ms));
+}
+
+function clearBotTimers(g) {
+    g?.botTimers?.forEach(clearTimeout);
+    if (g) g.botTimers = [];
+}
+
+function botDelay() { return 1500 + Math.random() * 3000; }
+
+function pickRandom(arr) { return arr.length ? arr[Math.floor(Math.random() * arr.length)] : null; }
+
+// Entscheidet, was ein Bot in seiner Nachtrunde tut (einfache Zufalls-Heuristiken)
+function botNightPayload(room, g, entry, botId) {
+    const targets = buildNightTargetsFor(room, g, entry, botId);
+    const pickId  = () => pickRandom(targets)?.id ?? null;
+
+    if (entry.group === 'Glöckner') return Math.random() < 0.2 ? { targetId: '__ring__' } : {};
+    if (entry.group === 'Dieb')     return Math.random() < 0.5 ? { targetId: pickRandom(g.diebOptions ?? []) } : {};
+    if (entry.group === 'Gendarm')  return Math.random() < 0.15 ? { targetId: pickId() } : {};
+
+    switch (entry.actionType) {
+        case 'select-two': {
+            const ids = shuffle(targets.map(t => t.id)).slice(0, 2);
+            return ids.length === 2 ? { targets: ids } : {};
+        }
+        case 'witch': {
+            if (g.nightVictim && !g.hexeUsedHeal && Math.random() < 0.5) return { heal: true };
+            if (!g.hexeUsedPoison && Math.random() < 0.15) {
+                const tid = pickId();
+                if (tid) return { poisonTargetId: tid };
+            }
+            return {};
+        }
+        default:
+            return { targetId: pickId() };
+    }
+}
+
+// Plant die Züge aller Bots der gerade aktiven Nachtrolle
+function scheduleBotNightTurns(code, room) {
+    const g = room.game;
+    if (!g || g.phase !== 'night') return;
+    clearBotTimers(g);
+    const entry = g.nightQueue[g.nightIdx];
+    if (!entry || entry.done) return;
+
+    if (entry.actionType === 'kill') { scheduleBotWolfSync(code, room, entry); return; }
+
+    entry.playerIds.filter(id => isBotPlayer(room, id)).forEach(botId => {
+        addBotTimer(g, () => {
+            if (room.game !== g || g.phase !== 'night') return;
+            if (g.nightQueue[g.nightIdx] !== entry || entry.done) return;
+            const payload = botNightPayload(room, g, entry, botId);
+            const done = processNightAction(code, room, entry, botId, payload);
+            if (done && g.autoMode) {
+                clearAutoTimers(g);
+                g.autoTimer = setTimeout(() => {
+                    if (room.game?.phase === 'night') advanceNight(code, room);
+                }, 800);
+            }
+        }, botDelay());
+    });
+}
+
+// Werwolf-Bots: schließen sich dem führenden Kandidaten an und bestätigen die
+// Mehrheit. Wird nach jeder Stimmabgabe erneut aufgerufen, bis das Opfer steht.
+function scheduleBotWolfSync(code, room, entry) {
+    const g = room.game;
+    if (!g || g.phase !== 'night' || entry.done) return;
+    clearBotTimers(g);
+
+    const bots = entry.playerIds.filter(id => isBotPlayer(room, id));
+    if (bots.length === 0) return;
+
+    bots.forEach(botId => {
+        addBotTimer(g, () => {
+            if (room.game !== g || g.phase !== 'night') return;
+            if (g.nightQueue[g.nightIdx] !== entry || entry.done) return;
+
+            const counts    = getVoteCounts(g.wolfVotes);
+            const threshold = Math.floor(entry.playerIds.length / 2) + 1;
+            const leader    = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+            const desired   = leader ?? pickRandom(buildNightTargetsFor(room, g, entry, botId))?.id;
+            if (!desired) return;
+
+            if (g.wolfVotes[botId] !== desired) {
+                // processNightAction ruft scheduleBotWolfSync erneut auf
+                processNightAction(code, room, entry, botId, { vote: desired });
+            } else if (getMajorityTarget(counts, threshold) === desired && !g.wolfConfirms.has(botId)) {
+                processNightAction(code, room, entry, botId, { confirm: true });
+            }
+        }, botDelay());
+    });
+}
+
+// Bots klagen nach kurzer "Bedenkzeit" an oder überspringen die Runde
+function scheduleBotNominations(code, room) {
+    const g = room.game;
+    if (!g) return;
+    clearBotTimers(g);
+    room.players.filter(p => p.isBot && g.alive.has(p.id)).forEach(bot => {
+        if (g.dayNominations[bot.id] !== undefined) return; // Narr/Händler-Ziel bereits vorregistriert
+        addBotTimer(g, () => {
+            if (room.game !== g || g.phase !== 'day-accusation') return;
+            if (g.dayNominations[bot.id] !== undefined) return;
+            // Werwolf-Bots klagen keine Rudelmitglieder an
+            const candidates = [...g.alive].filter(id =>
+                id !== bot.id &&
+                id !== g.haendler_away &&
+                !(isWolf(room, bot.id) && isWolf(room, id)));
+            const target = Math.random() < 0.6 ? pickRandom(candidates) : null;
+            castDayNomination(code, room, bot.id, target);
+        }, 2000 + Math.random() * 6000);
+    });
+}
+
+// Bots stimmen über die Angeklagten ab (Werwolf-Bots schonen das Rudel)
+function scheduleBotDayVotes(code, room) {
+    const g = room.game;
+    if (!g) return;
+    clearBotTimers(g);
+    room.players.filter(p => p.isBot && g.alive.has(p.id)).forEach(bot => {
+        if (g.haendler_away === bot.id) return;
+        if (findPlayerByRole(room, 'Narr') === bot.id) return;
+        addBotTimer(g, () => {
+            if (room.game !== g || g.phase !== 'day-voting') return;
+            if (g.dayVotes[bot.id] !== undefined) return;
+            let options = g.dayAccused.filter(id => id !== bot.id && g.alive.has(id));
+            if (isWolf(room, bot.id)) {
+                const nonWolf = options.filter(id => !isWolf(room, id));
+                if (nonWolf.length) options = nonWolf;
+            }
+            if (!options.length) options = g.dayAccused.filter(id => g.alive.has(id));
+            const target = pickRandom(options);
+            if (target) castDayVote(code, room, bot.id, target);
+        }, 2000 + Math.random() * 5000);
+    });
+}
+
+// Bot-Jäger schießt nach kurzer Pause auf ein zufälliges Ziel
+function scheduleBotHunterShot(code, room) {
+    const g = room.game;
+    const jaegerId = findPlayerByRole(room, 'Jaeger');
+    if (!jaegerId || !isBotPlayer(room, jaegerId)) return;
+    clearBotTimers(g);
+    const phase = g.phase;
+    addBotTimer(g, () => {
+        if (room.game !== g || g.phase !== phase) return;
+        const target = pickRandom(hunterShootTargets(room, g))?.id ?? null;
+        if (phase === 'hunter-night-shot') resolveNightHunterShot(code, room, target);
+        else                               resolveDayHunterShot(code, room, target);
+    }, 2500 + Math.random() * 2000);
+}
+
 // Jäger starb in der Nacht und schießt (oder wird übersprungen: targetId = null)
 function resolveNightHunterShot(code, room, targetId) {
     const g = room.game;
@@ -343,6 +528,7 @@ function doPhaseAdvance(code, room) {
                     if (room.game?.phase === 'hunter-night-shot') resolveNightHunterShot(code, room, null);
                 }, 45000);
             }
+            scheduleBotHunterShot(code, room);
         } else {
             io.to(code).emit('morning-reveal', { deaths });
             g.phase = 'morning-reveal'; // Übergangsphase verhindert doppeltes Weiterschalten
@@ -502,6 +688,8 @@ function freshGameState(room, narratorPlayerId, assignments) {
         dayNominations: {},
         dayAccused:     [],
         dayVotes:       {},
+        dayRunoff:      false,
+        dayVoteResult:  null,
         dayAlsoDied:    [],
         dayEliminatedInfo:       null,
         magd_herr:               null,
@@ -522,6 +710,7 @@ function freshGameState(room, narratorPlayerId, assignments) {
         spectators:              new Set(),
         villageChat:             [],
         wolfChat:                [],
+        botTimers:               [],
     };
 }
 
@@ -541,6 +730,7 @@ function applyDeath(code, room, deadId) {
         });
         tryMagdTransform(code, room, id);
         tryWildesKindTransform(code, room, id);
+        if (!isBotPlayer(room, id)) g.spectators.add(id);
         io.to(id).emit('you-are-dead');
     };
     kill(deadId);
@@ -776,6 +966,8 @@ function advanceNight(code, room) {
         players: playerStatusList(room, g),
         waiting: true,
     });
+
+    scheduleBotNightTurns(code, room);
 }
 
 function skipNight(code, room) {
@@ -840,6 +1032,7 @@ function processNightAction(code, room, entry, actorId, payload) {
             }
         }
         broadcastWolfVotes(code, room, entry, g);
+        scheduleBotWolfSync(code, room, entry);
         return false;
 
     } else if (entry.actionType === 'view') {
@@ -1263,11 +1456,14 @@ function checkWinCondition(room) {
 function startDay(code, room) {
     const g = room.game;
 
-    // Apply deaths
+    // Apply deaths — Nacht-Tote werden sofort Zuschauer (Fix: der Client meldete
+    // sich beim Morgen-Screen an, als der Server sie noch als lebendig führte)
     for (const pid of g.pendingDeaths) {
         g.alive.delete(pid);
         tryMagdTransform(code, room, pid);
         tryWildesKindTransform(code, room, pid);
+        if (!isBotPlayer(room, pid)) g.spectators.add(pid);
+        io.to(pid).emit('you-are-dead');
     }
     g.pendingDeaths = new Set();
     g.round++;
@@ -1318,6 +1514,8 @@ function startDayAccusation(code, room) {
     g.dayNominations = {};
     g.dayAccused = [];
     g.dayVotes = {};
+    g.dayRunoff = false;
+    g.dayVoteResult = null;
     g.dayAlsoDied = [];
     g.dayEliminatedInfo = null;
 
@@ -1339,6 +1537,8 @@ function startDayAccusation(code, room) {
         awayPlayerId: g.haendler_away || null,
     });
     narratorPush(g, { phase: 'day-accusation', round: g.round, players: playerStatusList(room, g), events: g.events, awayPlayerId: g.haendler_away || null });
+
+    scheduleBotNominations(code, room);
 }
 
 function processDayNominations(code, room) {
@@ -1403,14 +1603,86 @@ function checkDayVotesComplete(code, room) {
     if (Object.keys(g.dayVotes).length >= countDayVoters(room, g)) processDayVotes(code, room);
 }
 
-function startDayVoting(code, room) {
+// runoff = Stichwahl nach Gleichstand: gleiche Phase, aber nur die Erstplatzierten
+function startDayVoting(code, room, runoff = false) {
     const g = room.game;
     g.phase = 'day-voting';
     g.dayVotes = {};
 
-    const accused = g.dayAccused.map(id => ({ id, name: playerName(room, id) }));
-    io.to(code).emit('phase-changed', { phase: 'day-voting', round: g.round, accused, awayPlayerId: g.haendler_away || null });
-    narratorPush(g, { phase: 'day-voting', round: g.round, accused, players: playerStatusList(room, g), events: g.events, awayPlayerId: g.haendler_away || null });
+    // Kontext für die Wähler: wie oft wurde jeder Angeklagte nominiert
+    // (bzw. in der Stichwahl: wie viele Stimmen er im ersten Wahlgang hatte)
+    const counts = {};
+    if (runoff) {
+        (g.dayVoteResult ?? []).forEach(r => { counts[r.id] = r.votes; });
+    } else {
+        for (const nid of Object.values(g.dayNominations)) {
+            if (nid) counts[nid] = (counts[nid] ?? 0) + 1;
+        }
+    }
+
+    const accused = g.dayAccused.map(id => ({ id, name: playerName(room, id), count: counts[id] ?? 0 }));
+    io.to(code).emit('phase-changed', { phase: 'day-voting', round: g.round, accused, runoff, awayPlayerId: g.haendler_away || null });
+    narratorPush(g, { phase: 'day-voting', round: g.round, accused, runoff, players: playerStatusList(room, g), events: g.events, awayPlayerId: g.haendler_away || null });
+
+    scheduleBotDayVotes(code, room);
+}
+
+// Nominierung eines Spielers (Mensch via Socket oder Bot) inkl. aller Updates
+function castDayNomination(code, room, voterId, targetId) {
+    const g = room.game;
+    if (!g || g.phase !== 'day-accusation') return;
+    if (!g.alive.has(voterId)) return;
+    if (g.haendler_away === voterId) return;
+    if (findPlayerByRole(room, 'Narr') === voterId) return;
+
+    // Cannot nominate the away player — treat as skip
+    const effectiveTarget = (targetId && targetId !== g.haendler_away) ? targetId : null;
+    g.dayNominations[voterId] = effectiveTarget;
+    io.to(voterId).emit('day-nomination-done');
+
+    const nominations = Object.values(g.dayNominations);
+    const tally = {};
+    for (const nid of nominations) { if (nid) tally[nid] = (tally[nid] ?? 0) + 1; }
+    const skipCount = nominations.filter(v => v === null).length;
+    narratorPush(g, {
+        phase: 'day-accusation', round: g.round,
+        progress: { nominated: nominations.length, total: g.alive.size, skipped: skipCount, tally },
+        players: playerStatusList(room, g), events: g.events,
+    });
+    io.to(code).emit('day-accusation-update', {
+        tally,
+        skipCount,
+        totalResponded: nominations.length,
+        total: g.alive.size,
+    });
+
+    checkDayNominationsComplete(code, room);
+}
+
+// Stimmabgabe über die Angeklagten (Mensch via Socket oder Bot) inkl. aller Updates
+function castDayVote(code, room, voterId, targetId) {
+    const g = room.game;
+    if (!g || g.phase !== 'day-voting') return;
+    if (!g.alive.has(voterId)) return;
+    if (g.haendler_away === voterId) return;
+    if (findPlayerByRole(room, 'Narr') === voterId) return;
+    if (!g.dayAccused.includes(targetId)) return;
+
+    g.dayVotes[voterId] = targetId;
+    io.to(voterId).emit('day-vote-done');
+
+    const counts = {};
+    for (const vid of Object.values(g.dayVotes)) { counts[vid] = (counts[vid] ?? 0) + 1; }
+    const totalVoted  = Object.keys(g.dayVotes).length;
+    const totalVoters = countDayVoters(room, g);
+    io.to(code).emit('day-vote-update', { counts, totalVoted, totalVoters });
+    narratorPush(g, {
+        phase: 'day-voting', round: g.round,
+        progress: { voted: totalVoted, total: totalVoters, counts },
+        players: playerStatusList(room, g), events: g.events,
+    });
+
+    checkDayVotesComplete(code, room);
 }
 
 function processDayVotes(code, room) {
@@ -1421,6 +1693,18 @@ function processDayVotes(code, room) {
     }
 
     const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+    g.dayVoteResult = sorted.map(([id, votes]) => ({ id, name: playerName(room, id), votes }));
+
+    // Gleichstand an der Spitze → einmalige Stichwahl zwischen den Erstplatzierten
+    if (!g.dayRunoff && sorted.length >= 2 && sorted[0][1] === sorted[1][1]) {
+        const tied = sorted.filter(([, c]) => c === sorted[0][1]).map(([id]) => id);
+        g.dayRunoff  = true;
+        g.dayAccused = tied;
+        addEvent(g, `Gleichstand — Stichwahl zwischen ${tied.map(id => playerName(room, id)).join(' und ')}.`);
+        startDayVoting(code, room, true);
+        return;
+    }
+
     let eliminated = null;
     if (sorted.length > 0 && (sorted.length < 2 || sorted[0][1] > sorted[1][1])) {
         eliminated = sorted[0][0];
@@ -1435,6 +1719,8 @@ function processDayVotes(code, room) {
         eliminated = null;
     } else if (eliminated) {
         addEvent(g, `${playerName(room, eliminated)} wurde vom Dorf eliminiert.`);
+    } else if (g.dayRunoff) {
+        addEvent(g, 'Auch die Stichwahl endet unentschieden — niemand wird eliminiert.');
     } else {
         addEvent(g, 'Unentschieden — niemand wird eliminiert.');
     }
@@ -1446,6 +1732,7 @@ function endGame(code, room, win) {
     const g = room.game;
     g.phase = 'game-over';
     clearAutoTimers(g);
+    clearBotTimers(g);
     addEvent(g, win.message);
     io.to(code).emit('game-over', { winner: win.winner, message: win.message, hostId: room.hostId });
     narratorPush(g, { phase: 'game-over', winner: win.winner, message: win.message, events: g.events, players: playerStatusList(room, g) });
@@ -1470,6 +1757,7 @@ function startDayHunterShot(code, room) {
             if (room.game?.phase === 'hunter-day-shot') resolveDayHunterShot(code, room, null);
         }, 45000);
     }
+    scheduleBotHunterShot(code, room);
 }
 
 function resolveDayHunterShot(code, room, targetId) {
@@ -1502,6 +1790,8 @@ function finishDay(code, room, { skipped = false, narrSurvived = false, hunterSh
         hunterShot,
         skipped:      !!skipped,
         narrSurvived: !!narrSurvived,
+        voteResult:   g.dayVoteResult,
+        wasRunoff:    !!g.dayRunoff,
     };
     io.to(code).emit('phase-changed', payload);
     narratorPush(g, { ...payload, events: g.events, players: playerStatusList(room, g) });
@@ -1580,6 +1870,7 @@ function handleGameLeave(code, room, playerId) {
             } else if (entry.actionType === 'kill') {
                 // Fewer wolves → new majority threshold, update everyone
                 broadcastWolfVotes(code, room, entry, g);
+                scheduleBotWolfSync(code, room, entry);
             }
         }
     } else if (g.phase === 'day-accusation') {
@@ -1838,9 +2129,11 @@ io.on('connection', (socket) => {
         const isAuthorized = room.game.narratorId === socket.id || room.hostId === socket.id;
         if (!isAuthorized) return;
 
+        clearAutoTimers(room.game);
+        clearBotTimers(room.game);
         room.phase = 'lobby';
         room.game  = null;
-        room.players.forEach(p => { p.isReady = p.isHost; p.requestedCard = null; });
+        room.players.forEach(p => { p.isReady = p.isHost || p.isBot; p.requestedCard = null; });
 
         room.players.forEach(p => {
             io.to(p.id).emit('back-to-lobby', {
@@ -1879,6 +2172,8 @@ io.on('connection', (socket) => {
         if (!ctx) return;
         const { code, room } = ctx;
         if (!room.game || room.game.narratorId !== socket.id) return;
+        clearAutoTimers(room.game);
+        clearBotTimers(room.game);
         io.to(code).emit('session-ended');
         rooms.delete(code);
     });
@@ -1895,6 +2190,19 @@ io.on('connection', (socket) => {
         doPhaseAdvance(code, room);
     });
 
+    socket.on('add-bot', () => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx || ctx.room.hostId !== socket.id) return;
+        const { code, room } = ctx;
+        if (room.phase !== 'lobby') return;
+        if (room.players.length >= 20) {
+            socket.emit('error', { message: 'Maximal 20 Spieler pro Raum.' });
+            return;
+        }
+        room.players.push(createBot(room));
+        broadcast(code);
+    });
+
     socket.on('kick-player', ({ playerId }) => {
         const ctx = findRoomBySocket(socket.id);
         if (!ctx || ctx.room.hostId !== socket.id) return;
@@ -1909,6 +2217,7 @@ io.on('connection', (socket) => {
     socket.on('set-narrator-player', ({ playerId }) => {
         const ctx = findRoomBySocket(socket.id);
         if (!ctx || ctx.room.hostId !== socket.id) return;
+        if (playerId && isBotPlayer(ctx.room, playerId)) return; // Bots können nicht erzählen
         ctx.room.designatedNarrator = playerId || null;
         if (playerId) ctx.room.narratorMode = true;
         broadcast(ctx.code);
@@ -1926,63 +2235,13 @@ io.on('connection', (socket) => {
     socket.on('day-nominate', ({ targetId }) => {
         const ctx = findRoomBySocket(socket.id);
         if (!ctx) return;
-        const { code, room } = ctx;
-        const g = room.game;
-        if (!g || g.phase !== 'day-accusation') return;
-        if (!g.alive.has(socket.id)) return;
-        if (g.haendler_away === socket.id) return;
-        if (findPlayerByRole(room, 'Narr') === socket.id) return;
-
-        // Cannot nominate the away player — treat as skip
-        const effectiveTarget = (targetId && targetId !== g.haendler_away) ? targetId : null;
-        g.dayNominations[socket.id] = effectiveTarget;
-        io.to(socket.id).emit('day-nomination-done');
-
-        const nominations = Object.values(g.dayNominations);
-        const tally = {};
-        for (const nid of nominations) { if (nid) tally[nid] = (tally[nid] ?? 0) + 1; }
-        const skipCount = nominations.filter(v => v === null).length;
-        narratorPush(g, {
-            phase: 'day-accusation', round: g.round,
-            progress: { nominated: nominations.length, total: g.alive.size, skipped: skipCount, tally },
-            players: playerStatusList(room, g), events: g.events,
-        });
-        io.to(code).emit('day-accusation-update', {
-            tally,
-            skipCount,
-            totalResponded: nominations.length,
-            total: g.alive.size,
-        });
-
-        checkDayNominationsComplete(code, room);
+        castDayNomination(ctx.code, ctx.room, socket.id, targetId);
     });
 
     socket.on('day-vote-cast', ({ targetId }) => {
         const ctx = findRoomBySocket(socket.id);
         if (!ctx) return;
-        const { code, room } = ctx;
-        const g = room.game;
-        if (!g || g.phase !== 'day-voting') return;
-        if (!g.alive.has(socket.id)) return;
-        if (g.haendler_away === socket.id) return;
-        if (findPlayerByRole(room, 'Narr') === socket.id) return;
-        if (!g.dayAccused.includes(targetId)) return;
-
-        g.dayVotes[socket.id] = targetId;
-        io.to(socket.id).emit('day-vote-done');
-
-        const counts = {};
-        for (const vid of Object.values(g.dayVotes)) { counts[vid] = (counts[vid] ?? 0) + 1; }
-        const totalVoted   = Object.keys(g.dayVotes).length;
-        const totalVoters  = countDayVoters(room, g);
-        io.to(code).emit('day-vote-update', { counts, totalVoted, totalVoters });
-        narratorPush(g, {
-            phase: 'day-voting', round: g.round,
-            progress: { voted: totalVoted, total: totalVoters, counts },
-            players: playerStatusList(room, g), events: g.events,
-        });
-
-        checkDayVotesComplete(code, room);
+        castDayVote(ctx.code, ctx.room, socket.id, targetId);
     });
 
     // ─ In-game chat ──────────────────────────────────────────────────────────
@@ -2083,8 +2342,24 @@ io.on('connection', (socket) => {
         if (!ctx) return;
         const { room } = ctx;
         const g = room.game;
-        if (!g || g.alive.has(socket.id)) return;
+        // pendingDeaths zählt mit: der Client meldet sich schon beim Morgen-Screen,
+        // bevor startDay die Toten endgültig aus alive entfernt
+        if (!g || (g.alive.has(socket.id) && !g.pendingDeaths.has(socket.id))) return;
         g.spectators.add(socket.id);
+
+        // Sofortiger Schnappschuss, damit der Zuschauer nicht auf das nächste Ereignis warten muss
+        const entry = g.nightQueue?.[g.nightIdx] ?? null;
+        socket.emit('narrator-update', {
+            phase: g.phase, round: g.round,
+            activeEntry: entry ? {
+                group: entry.group, hint: entry.hint,
+                actionType: entry.actionType,
+                playerNames: entry.playerIds.map(id => playerName(room, id)),
+                done: entry.done,
+            } : null,
+            events:  g.events,
+            players: playerStatusList(room, g),
+        });
     });
 
     // ─ Disconnect ─────────────────────────────────────────────────────────────
@@ -2100,10 +2375,16 @@ io.on('connection', (socket) => {
             // Resolve game state BEFORE removing the player (names must still resolve)
             if (room.game && !wasNarrator) handleGameLeave(code, room, socket.id);
             room.players = room.players.filter(p => p.id !== socket.id);
-            if (room.players.length === 0) { rooms.delete(code); return; }
+            // Ein Raum nur mit Bots wird aufgelöst — Host-Rolle geht nie an einen Bot
+            const humans = room.players.filter(p => !p.isBot);
+            if (humans.length === 0) {
+                if (room.game) { clearAutoTimers(room.game); clearBotTimers(room.game); }
+                rooms.delete(code);
+                return;
+            }
             if (room.hostId === socket.id) {
-                room.players[0].isHost = true;
-                room.hostId = room.players[0].id;
+                humans[0].isHost = true;
+                room.hostId = humans[0].id;
             }
             room.disconnectTimers.delete(socket.id);
 

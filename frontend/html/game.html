@@ -49,7 +49,9 @@
 
         <!-- Spectator panel: shown after the player has died -->
         <div class="spectator-panel" id="spectator-panel" hidden>
-            <p class="spectator-panel__eyebrow">&#9760; Zuschauer-Modus</p>
+            <p class="spectator-panel__eyebrow">&#9760; Geisterblick &mdash; du siehst jetzt alles</p>
+            <p class="spectator-panel__status" id="spectator-status">&hellip;</p>
+            <div class="spectator-roles" id="spectator-roles"></div>
             <div class="spectator-panel__log" id="spectator-log"></div>
         </div>
 
@@ -119,8 +121,9 @@
 
         <!-- Voting UI -->
         <div id="day-voting-ui" hidden>
-            <p class="day-panel__eyebrow">Abstimmung</p>
-            <p class="day-panel__hint">Wen verdächtigst du am meisten ein Werwolf zu sein?</p>
+            <p class="day-panel__eyebrow" id="day-voting-eyebrow">Abstimmung</p>
+            <p class="day-panel__hint" id="day-voting-hint">Wen verdächtigst du am meisten ein Werwolf zu sein?</p>
+            <p class="day-panel__accused-warn" id="day-voting-self-warn" hidden>&#9888; Du stehst selbst zur Wahl!</p>
             <div class="target-list" id="day-accused-list"></div>
             <button class="day-btn day-btn--confirm" id="day-vote-btn" hidden>Abstimmen &#10003;</button>
         </div>

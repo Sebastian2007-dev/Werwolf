@@ -240,6 +240,30 @@ body {
 .pi-kick { color: var(--text-muted); margin-left: 2px; }
 .pi-kick:hover { color: #e05555; border-color: rgba(224,85,85,0.4); background: rgba(224,85,85,0.08); }
 
+/* === Add-Bot button === */
+.add-bot-btn[hidden] { display: none; }
+.add-bot-btn {
+    margin-top: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    min-height: 44px;
+    background: rgba(255,255,255,0.03);
+    border: 1px dashed rgba(200,170,110,0.35);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.add-bot-btn:hover {
+    color: var(--accent);
+    border-color: rgba(200,170,110,0.6);
+    background: rgba(200,170,110,0.06);
+}
+
+.player-item.is-bot .player-item__name { color: rgba(160,190,230,0.9); }
+
 /* === Card grid (cards column) === */
 .cards-header {
     display: flex;

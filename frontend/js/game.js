@@ -443,7 +443,7 @@ socket.on('night-turn-done', () => {
 });
 
 // Phase transitions
-socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, alsoDied }) => {
+socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, alsoDied, voteResult }) => {
     gchatOnPhase(phase);
     viewingResult = false;
     // Day / night atmosphere
@@ -482,7 +482,7 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminate
         }
     }
     if (phase === 'day-voting' && accused) {
-        if (dayAlive && awayPlayerId !== currentPlayerId && currentCardId !== 'Narr') showDayVoting(accused);
+        if (dayAlive && awayPlayerId !== currentPlayerId && currentCardId !== 'Narr') showDayVoting(accused, runoff);
     }
     if (phase === 'hunter-day-shot') {
         // All day-alive players see a wait message; the Jäger gets hunter-shoot separately
@@ -498,12 +498,25 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, eliminate
         if (eliminated?.id === currentPlayerId || hunterShot?.id === currentPlayerId
             || alsoDied?.some(d => d.id === currentPlayerId)) setDead();
         hunterOverlay.hidden = true;
-        if (dayAlive && !isDead) showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied);
+        if (dayAlive && !isDead) showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied, voteResult);
     }
 });
 
 // Live vote progress during day voting
-socket.on('day-vote-update', ({ totalVoted, totalVoters }) => {
+socket.on('day-vote-update', ({ counts, totalVoted, totalVoters }) => {
+    // Live-Stimmenzähler an den Angeklagten-Buttons (für alle, die noch wählen)
+    dayAccusedList.querySelectorAll('.target-btn').forEach(btn => {
+        const count = counts?.[btn.dataset.id] ?? 0;
+        let badge = btn.querySelector('.vote-badge');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'vote-badge';
+            btn.appendChild(badge);
+        }
+        badge.textContent = count;
+        badge.hidden = count === 0;
+    });
+
     if (dayWaitUi.hidden === false) {
         dayWaitText.textContent = `${totalVoted} von ${totalVoters} Spielern haben abgestimmt…`;
     }
@@ -594,13 +607,23 @@ function showDayAccusation(players, maxAccusations) {
     };
 }
 
-function showDayVoting(accused) {
+function showDayVoting(accused, runoff = false) {
     daySelectedId = null;
     dayPanel.hidden = false;
     dayAccusationUi.hidden = true;
     dayVotingUi.hidden = false;
     dayWaitUi.hidden = true;
     dayVoteBtn.hidden = true;
+
+    const eyebrowEl  = document.getElementById('day-voting-eyebrow');
+    const hintEl     = document.getElementById('day-voting-hint');
+    const selfWarnEl = document.getElementById('day-voting-self-warn');
+
+    eyebrowEl.textContent = runoff ? 'Stichwahl' : 'Abstimmung';
+    hintEl.textContent = runoff
+        ? 'Gleichstand! Stimme erneut ab — nur die Erstplatzierten stehen noch zur Wahl.'
+        : 'Wen verdächtigst du am meisten ein Werwolf zu sein?';
+    selfWarnEl.hidden = !accused.some(a => a.id === currentPlayerId);
 
     dayAccusedList.innerHTML = '';
     buildTargetButtons(dayAccusedList, accused, (p, btn) => {
@@ -612,6 +635,19 @@ function showDayVoting(accused) {
         void dayVoteBtn.offsetWidth;
         dayVoteBtn.classList.add('confirm-pop');
         dayVoteBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    // Kontext an jedem Angeklagten: Anklagen (bzw. Stimmen des ersten Wahlgangs)
+    dayAccusedList.querySelectorAll('.target-btn').forEach((btn, i) => {
+        const a = accused[i];
+        if (a?.id === currentPlayerId) btn.classList.add('is-self');
+        if (!a?.count) return;
+        const meta = document.createElement('span');
+        meta.className = 'target-btn__meta';
+        meta.textContent = runoff
+            ? `${a.count} Stimme${a.count === 1 ? '' : 'n'} im 1. Wahlgang`
+            : `${a.count} Anklage${a.count === 1 ? '' : 'n'}`;
+        btn.appendChild(meta);
     });
 
     dayVoteBtn.onclick = () => {
@@ -643,7 +679,7 @@ function showDayNoVote() {
     dayWaitText.textContent = 'Du bist der Narr — du darfst nicht abstimmen.';
 }
 
-function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied) {
+function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied, voteResult) {
     dayAccusationUi.hidden = true;
     dayVotingUi.hidden = true;
     dayWaitUi.hidden = false;
@@ -653,7 +689,7 @@ function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDi
     } else if (skipped) {
         text = 'Abstimmung übersprungen — niemand wird eliminiert.';
     } else if (eliminated) {
-        text = `${eliminated.name} wurde vom Dorf eliminiert.`;
+        text = `${eliminated.name} wurde vom Dorf eliminiert — ${eliminated.roleName}.`;
     } else {
         text = 'Unentschieden — niemand wird eliminiert.';
     }
@@ -662,6 +698,15 @@ function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDi
         text += ' ' + alsoDied.map(d => `${d.name} (${d.roleName}) stirbt ebenfalls.`).join(' ');
     }
     dayWaitText.textContent = text;
+
+    // Stimmverteilung unter dem Ergebnis anzeigen
+    if (voteResult?.length > 0 && !skipped) {
+        const tallyLine = document.createElement('span');
+        tallyLine.className = 'day-panel__tally';
+        tallyLine.textContent = 'Stimmen: ' + voteResult.map(v => `${v.name} ${v.votes}`).join(' · ');
+        dayWaitText.appendChild(document.createElement('br'));
+        dayWaitText.appendChild(tallyLine);
+    }
 }
 
 // Jäger died at night: flip ONLY the Jäger's card first, then wait for hunter shot
@@ -906,17 +951,64 @@ socket.on('you-are-katz-maus', ({ role, partnerName }) => {
 // Dead player: server confirms we're a spectator (on reconnect)
 socket.on('you-are-dead', () => setDead());
 
-// Spectator event log: narrator-update is forwarded to dead players by the server
-socket.on('narrator-update', ({ events }) => {
+// Geisterblick: narrator-update wird toten Spielern vom Server weitergeleitet.
+// Sie sehen Spielstatus, alle Rollen offen und das Ereignisprotokoll.
+const spectatorStatus = document.getElementById('spectator-status');
+const spectatorRoles  = document.getElementById('spectator-roles');
+
+const SPECTATOR_PHASE_LABELS = {
+    'day-prep':          'Tag — das Dorf berät sich',
+    'night-summary':     'Der Morgen graut…',
+    'morning-reveal':    'Der Morgen graut…',
+    'hunter-night-shot': 'Der Jäger schießt noch einmal…',
+    'hunter-day-shot':   'Der Jäger schießt noch einmal…',
+    'day-accusation':    'Tag — Anklage-Phase läuft',
+    'day-voting':        'Tag — das Dorf stimmt ab',
+    'day-result':        'Tag — Ergebnis steht fest',
+    'game-over':         'Das Spiel ist vorbei',
+};
+
+socket.on('narrator-update', ({ phase, round, activeEntry, events, players }) => {
     if (!isDead) return;
-    spectatorLog.innerHTML = '';
-    events.forEach(e => {
-        const p = document.createElement('p');
-        p.className = 'spectator-log__entry';
-        p.textContent = e.text;
-        spectatorLog.appendChild(p);
-    });
-    spectatorLog.scrollTop = spectatorLog.scrollHeight;
+
+    if (phase) {
+        let status;
+        if (phase === 'night') {
+            status = `Nacht ${round ?? ''}`.trim();
+            if (activeEntry && !activeEntry.done) {
+                const plural = (activeEntry.playerNames?.length ?? 1) > 1;
+                status += ` — ${activeEntry.group} ${plural ? 'sind' : 'ist'} am Zug`;
+            }
+        } else {
+            status = SPECTATOR_PHASE_LABELS[phase] ?? phase;
+        }
+        spectatorStatus.textContent = status;
+    }
+
+    if (players) {
+        spectatorRoles.innerHTML = players.map(p => {
+            const r = ROLES.find(x => x.id === p.roleId);
+            const cls = 'spectator-role'
+                + (p.isAlive ? '' : ' is-dead')
+                + (p.id === currentPlayerId ? ' is-me' : '');
+            return `<div class="${cls}">
+                <span class="spectator-role__name">${esc(p.name)}</span>
+                <span class="spectator-role__role">${esc(r?.name ?? '?')}</span>
+            </div>`;
+        }).join('');
+    }
+
+    if (events) {
+        const atBottom = spectatorLog.scrollHeight - spectatorLog.scrollTop <= spectatorLog.clientHeight + 40;
+        spectatorLog.innerHTML = events.map(e => {
+            const t = new Date(e.time);
+            const time = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+            const isPhase = /beginnt|vorüber|Stichwahl|gestartet|gewonnen/.test(e.text);
+            return `<p class="spectator-log__entry${isPhase ? ' is-phase' : ''}">
+                <span class="spectator-log__time">${time}</span>${esc(e.text)}</p>`;
+        }).join('');
+        if (atBottom) spectatorLog.scrollTop = spectatorLog.scrollHeight;
+    }
 });
 
 // Restart: narrator dealt new cards — go to new game page
