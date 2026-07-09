@@ -13,23 +13,26 @@ body::before {
 
 .back-link {
     position: fixed;
-    top: 1.25rem;
-    left: 1.5rem;
+    top: calc(0.75rem + env(safe-area-inset-top));
+    left: 1rem;
     font-size: 0.85rem;
     color: var(--text-muted);
     text-decoration: none;
     transition: color var(--transition);
     z-index: 10;
+    padding: 0.5rem;
 }
 
 .back-link:hover { color: var(--accent); }
 
 .form-page {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 4rem 1.5rem;
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom));
     position: relative;
     z-index: 1;
 }
@@ -126,3 +129,17 @@ body::before {
 
 .form__submit:hover  { opacity: 0.88; transform: translateY(-1px); }
 .form__submit:active { transform: translateY(0); }
+
+/* === Responsive === */
+@media (max-width: 480px) {
+    .form-page {
+        padding: 3.5rem 1rem 2rem;
+        /* Karte oben ausrichten: springt nicht, wenn die Tastatur aufgeht */
+        align-items: flex-start;
+    }
+
+    .form-card {
+        padding: 1.75rem 1.25rem;
+        margin-top: 1.5rem;
+    }
+}

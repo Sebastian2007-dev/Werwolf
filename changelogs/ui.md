@@ -96,3 +96,13 @@
 - join.js: liest jetzt den ?code=-Parameter aus der URL — vorher erzeugte der QR-Code zwar den Link, aber das Formular blieb leer und der Code musste von Hand eingetippt werden
 - Bei gescanntem Code: Feld vorbefüllt + gesperrt (grün markiert), Untertitel "Raum XXXXXX erkannt — gib nur noch deinen Namen ein.", Fokus springt direkt ins Namensfeld
 - form.css: Stil .is-prefilled für den erkannten Raumcode
+
+## [2026-07-09 11:15] Mobile-Optimierung aller Seiten
+- Alle HTML-Seiten: viewport-fit=cover (Notch/Safe-Area) und theme-color Meta-Tag ergänzt
+- app.css: 100dvh statt 100vh (mobile Browser-Leisten), touch-action manipulation + Tap-Highlight aus für alle Bedienelemente, Footer/Modals mit Safe-Area-Abstand, größere Tap-Flächen (Modal-Schließen, Footer-Links), Hover-Transform auf Touch-Geräten deaktiviert
+- game.css: alle Buttons (game-btn, target-btn, day-btn, witch-btn) auf min. 44px Touch-Höhe; Nacht-/Jäger-/Magd-/WildesKind-Overlays scrollbar statt abgeschnitten bei viel Inhalt; Tag-Panel, Chat, Toasts und Countdown mit Safe-Area-Abständen; Chat-Eingabe auf 16px (verhindert iOS-Auto-Zoom); Mobile-Breakpoint: Karte skaliert mit Bildschirmhöhe, kompaktere Abstände
+- game.css Bugfix: .night-wait[hidden] wirkte nicht (display:flex übersteuerte das hidden-Attribut) — Mond + "Schließe deine Augen" blieben hinter der Nacht-Aktions-UI sichtbar
+- lobby.css: größere Tap-Flächen (Code kopieren, QR, Kick/Erzähler-Buttons, Zahlen-Spinner); Bereit-Button volle Breite auf Mobile; Chat-Eingabe 16px; Rollenkarten 4 pro Reihe auf schmalen Bildschirmen; Header umbruchfähig; QR-Modal an Bildschirmbreite angepasst; Footer mit Safe-Area
+- narrator.css: Weiter-Button klebt auf Mobile unten am Bildschirmrand (sticky), Header umbruchfähig, Buttons min. 48px
+- form.css: 100dvh, Formular-Karte auf Mobile oben ausgerichtet (springt nicht bei geöffneter Tastatur), Zurück-Link mit größerer Tap-Fläche
+- join.html: autocapitalize=characters am Raumcode-Feld (Handy-Tastatur startet mit Großbuchstaben)

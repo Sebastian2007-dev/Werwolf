@@ -34,6 +34,7 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    min-height: 100dvh;
 }
 
 .game-header {
@@ -163,6 +164,7 @@ body.is-day .card-flip {
 }
 
 .game-btn {
+    min-height: 44px;
     padding: 0.6rem 1.3rem;
     border-radius: 8px;
     font-family: var(--font-display);
@@ -286,10 +288,13 @@ body.is-day .card-flip {
 /* ── Bär-Toast ──────────────────────────────────────────────────────────────── */
 .baer-toast {
     position: fixed;
-    top: 4.2rem;
+    top: calc(4.2rem + env(safe-area-inset-top));
     left: 50%;
     transform: translateX(-50%);
     z-index: 90;
+    width: max-content;
+    max-width: calc(100vw - 2rem);
+    text-align: center;
     padding: 0.7rem 1.4rem;
     background: rgba(60,40,15,0.95);
     border: 1px solid rgba(180,140,70,0.5);
@@ -369,6 +374,8 @@ body.is-day .card-flip {
     justify-content: center;
     flex-direction: column;
     padding: 2rem;
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+    overflow-y: auto;
     animation: night-in 0.9s cubic-bezier(0.4,0,0.2,1);
 }
 .night-overlay[hidden] { display: none; }
@@ -430,9 +437,10 @@ body.is-day .card-flip {
 /* Card peek button */
 .night-card-peek {
     position: absolute;
-    top: 1rem;
+    top: calc(0.75rem + env(safe-area-inset-top));
     right: 1rem;
-    padding: 0.4rem 0.8rem;
+    min-height: 40px;
+    padding: 0.5rem 0.9rem;
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.15);
     border-radius: 6px;
@@ -446,6 +454,7 @@ body.is-day .card-flip {
 .night-card-peek:hover { background: rgba(255,255,255,0.12); color: #fff; border-color: rgba(255,255,255,0.3); }
 
 /* Night wait state */
+.night-wait[hidden] { display: none; }
 .night-wait {
     display: flex;
     flex-direction: column;
@@ -491,6 +500,8 @@ body.is-day .card-flip {
     text-align: center;
     position: relative;
     z-index: 1;
+    /* margin auto: zentriert, aber ohne Abschneiden wenn der Inhalt höher als der Bildschirm ist */
+    margin: auto 0;
     animation: action-rise 0.5s cubic-bezier(0.2,0,0,1);
 }
 .night-action[hidden] { display: none; }
@@ -526,6 +537,7 @@ body.is-day .card-flip {
 .target-list[hidden] { display: none; }
 
 .target-btn {
+    min-height: 44px;
     padding: 0.7rem 1rem;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.09);
@@ -595,6 +607,7 @@ body.is-day .card-flip {
 
 .witch-btn {
     position: relative;
+    min-height: 44px;
     padding: 0.7rem 1.4rem;
     background: rgba(255,255,255,0.04);
     border: 1px solid rgba(255,255,255,0.09);
@@ -754,12 +767,14 @@ body.is-day .card-flip {
     z-index: 40;
     background: rgba(8, 6, 18, 0.97);
     border-top: 1px solid var(--border);
-    padding: 1.25rem 1.5rem 1.75rem;
+    padding: 1.25rem 1.5rem;
+    padding-bottom: calc(1.75rem + env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
     align-items: center;
     max-height: 65vh;
+    max-height: 70dvh;
     overflow-y: auto;
     animation: day-panel-up 0.4s cubic-bezier(0.2,0,0,1);
     backdrop-filter: blur(16px);
@@ -841,6 +856,7 @@ body.is-day .day-panel__eyebrow {
 }
 
 .day-btn {
+    min-height: 44px;
     padding: 0.65rem 1.4rem;
     border-radius: 9px;
     font-family: var(--font-body);
@@ -900,7 +916,8 @@ body.is-day .day-btn--confirm {
     flex-direction: column;
     align-items: center;
     gap: 1rem;
-    padding: 1.5rem 1rem 2rem;
+    padding: 1.5rem 1rem;
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
     overflow-y: auto;
     background: rgba(4, 3, 12, 0.98);
     animation: dawn-in 1.2s ease;
@@ -1050,7 +1067,7 @@ body.is-day .day-btn--confirm {
 /* Peek button (morning overlay) */
 .morning-overlay > .night-card-peek {
     position: fixed;
-    top: 1rem;
+    top: calc(0.75rem + env(safe-area-inset-top));
     right: 1rem;
 }
 
@@ -1142,8 +1159,14 @@ body.is-day .day-btn--confirm {
     justify-content: center;
     gap: 0.85rem;
     padding: 2rem 1.5rem;
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+    overflow-y: auto;
     animation: overlay-dramatic 0.7s cubic-bezier(0.2,0,0,1);
 }
+
+/* Erstes/letztes Kind bekommt auto-Margin: zentriert ohne Abschneiden bei Überlauf */
+.hunter-overlay > :first-child { margin-top: auto; }
+.hunter-overlay > :last-child  { margin-bottom: auto; }
 .wildeskind-overlay { background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(30,60,20,0.8) 0%, rgba(4,8,4,0.98) 70%); }
 .magd-overlay       { background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(60,45,10,0.8) 0%, rgba(10,8,3,0.98) 70%); }
 .hunter-overlay     { background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(60,10,10,0.8) 0%, rgba(20,4,4,0.98)  70%); }
@@ -1316,7 +1339,9 @@ body.is-day .day-btn--confirm {
 
 .auto-skip-warning {
     position: fixed;
-    bottom: 1.5rem;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    width: max-content;
+    max-width: calc(100vw - 2rem);
     left: 50%;
     transform: translateX(-50%);
     background: rgba(200,80,60,0.92);
@@ -1339,11 +1364,11 @@ body.is-day .day-btn--confirm {
 /* ── In-game Chat ───────────────────────────────────────────────────────────── */
 .gchat-toggle {
     position: fixed;
-    bottom: 1.4rem;
+    bottom: calc(1.4rem + env(safe-area-inset-bottom));
     right: 1.2rem;
     z-index: 55;
-    width: 48px;
-    height: 48px;
+    width: 52px;
+    height: 52px;
     border-radius: 50%;
     border: 1px solid rgba(255,255,255,0.12);
     background: rgba(16,12,34,0.88);
@@ -1394,6 +1419,7 @@ body.is-day .day-btn--confirm {
     align-items: center;
     justify-content: space-between;
     padding: 0.8rem 1rem;
+    padding-top: calc(0.8rem + env(safe-area-inset-top));
     border-bottom: 1px solid rgba(255,255,255,0.07);
     flex-shrink: 0;
 }
@@ -1475,17 +1501,19 @@ body.is-day .day-btn--confirm {
     display: flex;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(255,255,255,0.07);
     flex-shrink: 0;
 }
 .gchat-input {
     flex: 1;
+    min-width: 0;
     background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
     color: var(--text);
     font-family: var(--font-body);
-    font-size: 0.9rem;
+    font-size: 1rem; /* mind. 16px, sonst zoomt iOS beim Fokussieren */
     padding: 0.55rem 0.8rem;
     outline: none;
     transition: border-color 150ms ease;
@@ -1494,8 +1522,8 @@ body.is-day .day-btn--confirm {
 .gchat-input:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .gchat-send-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 8px;
     border: 1px solid rgba(200,170,110,0.3);
     background: rgba(200,170,110,0.1);
@@ -1510,3 +1538,60 @@ body.is-day .day-btn--confirm {
 }
 .gchat-send-btn:hover:not(:disabled) { background: rgba(200,170,110,0.2); }
 .gchat-send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MOBILE
+   ══════════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+    .game-main {
+        padding: 1.25rem 1rem 2rem;
+        gap: 1.25rem;
+    }
+
+    /* Karte skaliert mit, damit unter ihr Platz für Name + Buttons bleibt */
+    .card-flip {
+        width: min(200px, 44vh);
+    }
+
+    .card-info__name { font-size: 1.35rem; }
+
+    .game-actions {
+        width: 100%;
+        gap: 0.5rem;
+    }
+
+    .game-btn {
+        flex: 1 1 auto;
+        padding: 0.7rem 1rem;
+    }
+
+    .night-overlay,
+    .wildeskind-overlay,
+    .magd-overlay,
+    .hunter-overlay {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .target-list {
+        max-height: 45dvh;
+    }
+
+    .day-panel {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .game-over-box__title { font-size: 1.6rem; }
+}
+
+/* Touch-Geräte: Hover-Verschiebungen deaktivieren (bleiben sonst nach Tap "hängen") */
+@media (hover: none) {
+    .game-btn:hover,
+    .day-btn:hover,
+    .target-btn:hover,
+    .witch-btn:not([hidden]):hover,
+    .night-confirm:hover {
+        transform: none;
+    }
+}
