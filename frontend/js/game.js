@@ -1,10 +1,20 @@
 import { ROLES, DESCRIPTIONS, FACTION_LABEL } from '/js/roles.js';
+import { initVoice } from '/js/voice.js';
+import { initTutorial } from '/js/tutorial.js';
+
+// Tutorial: „?"-Knopf im Header öffnet es jederzeit (Auto-Anzeige macht die Lobby)
+initTutorial();
 
 const params = new URLSearchParams(window.location.search);
 const cardId   = params.get('card');
 const roomCode = params.get('code');
-// On reconnect we need the MOST RECENT socket ID known to the server, not the original lobby ID
-let currentPlayerId = params.get('player');
+// Für den Resume brauchen wir die NEUESTE Socket-ID, die der Server kennt.
+// Die URL veraltet, sobald die Verbindung zwischendurch neu aufgebaut wurde
+// (am Handy ständig: Bildschirm aus, App-Wechsel) — deshalb hat der
+// sessionStorage-Stand Vorrang, sofern er zum selben Raum gehört.
+const storedRoom = sessionStorage.getItem('ww_roomCode');
+const storedId   = sessionStorage.getItem('ww_playerId');
+let currentPlayerId = (storedRoom === roomCode && storedId) ? storedId : params.get('player');
 // May change if player is Ergebene Magd and transforms
 let currentCardId = cardId;
 
@@ -115,6 +125,7 @@ function setDead() {
 
 // ── Night overlay ─────────────────────────────────────────────────────────────
 const socket = io();
+const voice  = initVoice(socket);
 
 socket.on('connect', () => {
     if (roomCode && currentPlayerId) {
@@ -123,8 +134,23 @@ socket.on('connect', () => {
 });
 
 socket.on('resume-ok', () => {
-    // Track the current socket ID so reconnects can find us in the room
+    // Aktuelle Socket-ID überall nachführen, damit auch ein späterer
+    // Seiten-Reload (neue Verbindung) den Spieler wiederfindet
     currentPlayerId = socket.id;
+    sessionStorage.setItem('ww_roomCode', roomCode);
+    sessionStorage.setItem('ww_playerId', socket.id);
+    const url = new URL(window.location.href);
+    url.searchParams.set('player', socket.id);
+    history.replaceState(null, '', url);
+    voice.resume();
+});
+
+// Resume fehlgeschlagen (Raum weg oder ID unbekannt) — nicht stumm hängen bleiben
+socket.on('resume-error', () => {
+    const toast = document.getElementById('back-toast');
+    toast.textContent = 'Verbindung zum Spiel verloren — zurück zur Startseite…';
+    toast.hidden = false;
+    setTimeout(() => { window.location.href = '/'; }, 3000);
 });
 
 // ── Day panel refs ────────────────────────────────────────────────────────────
@@ -143,6 +169,26 @@ let daySelectedId = null;
 let dayAlive = false;
 let skipConfirmPending = false;
 let skipConfirmTimer   = null;
+
+// ── Live-Liste: wer klagt wen an / wer stimmt für wen ─────────────────────────
+const dayLiveVotes      = document.getElementById('day-live-votes');
+const dayLiveVotesLabel = document.getElementById('day-live-votes-label');
+const dayLiveVotesList  = document.getElementById('day-live-votes-list');
+
+function renderLiveVotes(label, pairs, skipText) {
+    if (!pairs?.length) { dayLiveVotes.hidden = true; return; }
+    dayLiveVotesLabel.textContent = label;
+    dayLiveVotesList.innerHTML = pairs.map(p => p.target
+        ? `<li><strong>${esc(p.voter)}</strong> &rarr; ${esc(p.target)}</li>`
+        : `<li class="is-skip"><strong>${esc(p.voter)}</strong> ${skipText}</li>`
+    ).join('');
+    dayLiveVotes.hidden = false;
+}
+
+function clearLiveVotes() {
+    dayLiveVotes.hidden = true;
+    dayLiveVotesList.innerHTML = '';
+}
 
 // ── Morning overlay refs ──────────────────────────────────────────────────────
 const morningOverlay  = document.getElementById('morning-overlay');
@@ -173,10 +219,19 @@ const naHint        = document.getElementById('na-hint');
 const targetList    = document.getElementById('target-list');
 const witchUi       = document.getElementById('witch-ui');
 const witchVictim   = document.getElementById('witch-victim');
-const witchHeal     = document.getElementById('witch-heal');
-const witchPoison   = document.getElementById('witch-poison');
+const witchStepHeal    = document.getElementById('witch-step-heal');
+const witchStepPoison  = document.getElementById('witch-step-poison');
+const witchStepSummary = document.getElementById('witch-step-summary');
+const witchHealYes     = document.getElementById('witch-heal-yes');
+const witchHealNo      = document.getElementById('witch-heal-no');
+const witchPoisonYes   = document.getElementById('witch-poison-yes');
+const witchPoisonNo    = document.getElementById('witch-poison-no');
+const witchPoisonHint  = document.getElementById('witch-poison-hint');
+const witchSumHeal     = document.getElementById('witch-sum-heal');
+const witchSumPoison   = document.getElementById('witch-sum-poison');
+const witchChangeHeal  = document.getElementById('witch-change-heal');
+const witchChangePoison = document.getElementById('witch-change-poison');
 const witchConfirm  = document.getElementById('witch-confirm');
-const witchPass     = document.getElementById('witch-pass');
 const witchPoisonTargets = document.getElementById('witch-poison-targets');
 const wolfStatus    = document.getElementById('wolf-status');
 const viewResult    = document.getElementById('view-result');
@@ -209,10 +264,13 @@ function resetActionPanels() {
     viewResult.hidden        = true;
     selectTwoHint.hidden     = true;
     nightConfirm.hidden      = true;
+    witchStepHeal.hidden     = true;
+    witchStepPoison.hidden   = true;
+    witchStepSummary.hidden  = true;
+    witchPoisonHint.hidden   = true;
     witchPoisonTargets.hidden = true;
     targetList.innerHTML     = '';
     witchPoisonTargets.innerHTML = '';
-    witchHeal.classList.remove('is-active');
     wolfStatus.hidden    = true;
     wolfStatus.textContent = '';
     nightConfirm.disabled = false;
@@ -245,44 +303,92 @@ socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
     nightState.type = actionType;
 
     if (actionType === 'witch') {
-        const victim = extra?.victim ?? null;
+        // Geführter Ablauf: Heiltrank Ja/Nein → Gifttrank Ja/Nein (+ Ziel) → Übersicht
+        const victim    = extra?.victim ?? null;
+        const canHeal   = !!victim && (extra?.canHeal ?? true);
+        const canPoison = extra?.canPoison ?? true;
         witchUi.hidden = false;
+        nightState.witchHealSelected = false;
+        nightState.witchPoisonTarget = null;   // { id, name } oder null
+        let witchBackToSummary = false;        // „Ändern" kehrt direkt zur Übersicht zurück
 
         witchVictim.textContent = victim
             ? `Die Werwölfe haben ${victim.name} gewählt.`
             : 'Diese Nacht wurde niemand angegriffen.';
 
-        witchHeal.hidden   = !victim || !(extra?.canHeal ?? true);
-        witchPoison.hidden = !(extra?.canPoison ?? true);
-
-        witchHeal.onclick = () => {
-            nightState.witchHealSelected = !nightState.witchHealSelected;
-            witchHeal.classList.toggle('is-active', nightState.witchHealSelected);
-        };
-
-        witchPoison.onclick = () => {
-            witchPoisonTargets.hidden = !witchPoisonTargets.hidden;
-            if (!witchPoisonTargets.hidden && witchPoisonTargets.children.length === 0) {
-                buildTargetButtons(witchPoisonTargets, players, (p, btn) => {
-                    witchPoisonTargets.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
-                    btn.classList.add('is-selected');
-                    nightState.witchPoisonTarget = p.id;
-                });
+        const renderWitchSummary = () => {
+            if (!canHeal) {
+                witchSumHeal.textContent = victim
+                    ? '❤ Heiltrank: nicht mehr verfügbar'
+                    : '❤ Heiltrank: kein Opfer heute Nacht';
+                witchChangeHeal.hidden = true;
+            } else {
+                witchSumHeal.textContent = nightState.witchHealSelected
+                    ? `❤ Heiltrank: Ja — ${victim.name} wird gerettet`
+                    : '❤ Heiltrank: Nein';
+                witchChangeHeal.hidden = false;
+            }
+            if (!canPoison) {
+                witchSumPoison.textContent = '☠ Gifttrank: nicht mehr verfügbar';
+                witchChangePoison.hidden = true;
+            } else {
+                witchSumPoison.textContent = nightState.witchPoisonTarget
+                    ? `☠ Gifttrank: Ja — ${nightState.witchPoisonTarget.name} wird vergiftet`
+                    : '☠ Gifttrank: Nein';
+                witchChangePoison.hidden = false;
             }
         };
 
+        const showWitchStep = (step) => {
+            witchStepHeal.hidden    = step !== 'heal';
+            witchStepPoison.hidden  = step !== 'poison';
+            witchStepSummary.hidden = step !== 'summary';
+            if (step === 'summary') renderWitchSummary();
+        };
+
+        const afterHeal = () => {
+            if (witchBackToSummary || !canPoison) showWitchStep('summary');
+            else showWitchStep('poison');
+        };
+
+        witchHealYes.onclick = () => { nightState.witchHealSelected = true;  afterHeal(); };
+        witchHealNo.onclick  = () => { nightState.witchHealSelected = false; afterHeal(); };
+
+        witchPoisonYes.onclick = () => {
+            witchPoisonHint.hidden    = false;
+            witchPoisonTargets.hidden = false;
+            if (witchPoisonTargets.children.length === 0) {
+                buildTargetButtons(witchPoisonTargets, players, (p, btn) => {
+                    witchPoisonTargets.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
+                    btn.classList.add('is-selected');
+                    nightState.witchPoisonTarget = p;
+                    showWitchStep('summary');
+                });
+            }
+        };
+        witchPoisonNo.onclick = () => {
+            nightState.witchPoisonTarget = null;
+            witchPoisonHint.hidden    = true;
+            witchPoisonTargets.hidden = true;
+            witchPoisonTargets.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
+            showWitchStep('summary');
+        };
+
+        witchChangeHeal.onclick   = () => { witchBackToSummary = true; showWitchStep('heal'); };
+        witchChangePoison.onclick = () => showWitchStep('poison');
+
         witchConfirm.onclick = () => {
             socket.emit('night-action', {
-                heal: nightState.witchHealSelected || undefined,
-                poisonTargetId: nightState.witchPoisonTarget || undefined,
+                heal:           nightState.witchHealSelected || undefined,
+                poisonTargetId: nightState.witchPoisonTarget?.id || undefined,
             });
             showWait('Deine Entscheidung wurde gespeichert.');
         };
 
-        witchPass.onclick = () => {
-            socket.emit('night-action', {});
-            showWait('Du hast nichts getan.');
-        };
+        // Einstieg: nicht verfügbare Schritte überspringen
+        if (canHeal)        showWitchStep('heal');
+        else if (canPoison) showWitchStep('poison');
+        else                showWitchStep('summary');
 
     } else if (actionType === 'select-two') {
         nightState.maxSelect = 2;
@@ -446,6 +552,11 @@ socket.on('night-turn-done', () => {
 socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, alsoDied, voteResult }) => {
     gchatOnPhase(phase);
     viewingResult = false;
+    // Namensliste der Anklagen/Stimmen gilt nur innerhalb einer Phase
+    if (['day-accusation', 'day-voting', 'night', 'day-result'].includes(phase)) clearLiveVotes();
+    // Lebend-Status aus jeder mitgelieferten Spielerliste ableiten — wichtig
+    // nach einem Reload, sonst bleibt dayAlive fälschlich auf false
+    if (players) dayAlive = players.some(p => p.id === currentPlayerId);
     // Day / night atmosphere
     const nightPhases = ['night'];
     const dayPhases   = ['night-summary','day-prep','day-accusation','day-voting','hunter-day-shot','day-result'];
@@ -503,7 +614,8 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
 });
 
 // Live vote progress during day voting
-socket.on('day-vote-update', ({ counts, totalVoted, totalVoters }) => {
+socket.on('day-vote-update', ({ counts, totalVoted, totalVoters, pairs }) => {
+    renderLiveVotes('Stimmen', pairs, 'enthält sich');
     // Live-Stimmenzähler an den Angeklagten-Buttons (für alle, die noch wählen)
     dayAccusedList.querySelectorAll('.target-btn').forEach(btn => {
         const count = counts?.[btn.dataset.id] ?? 0;
@@ -523,7 +635,8 @@ socket.on('day-vote-update', ({ counts, totalVoted, totalVoters }) => {
 });
 
 // Live nomination tally during accusation phase
-socket.on('day-accusation-update', ({ tally, skipCount, totalResponded, total }) => {
+socket.on('day-accusation-update', ({ tally, skipCount, totalResponded, total, pairs }) => {
+    renderLiveVotes('Anklagen', pairs, 'überspringt');
     // Update vote badges on target buttons (visible to players still choosing)
     dayTargetList.querySelectorAll('.target-btn').forEach(btn => {
         const tid = btn.dataset.id;
@@ -680,6 +793,7 @@ function showDayNoVote() {
 }
 
 function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied, voteResult) {
+    dayPanel.hidden = false;
     dayAccusationUi.hidden = true;
     dayVotingUi.hidden = true;
     dayWaitUi.hidden = false;
@@ -1015,6 +1129,8 @@ socket.on('narrator-update', ({ phase, round, activeEntry, events, players }) =>
 socket.on('game-started', ({ assignments }) => {
     const newCard = assignments[currentPlayerId];
     if (!newCard) return;
+    sessionStorage.setItem('ww_roomCode', roomCode);
+    sessionStorage.setItem('ww_playerId', currentPlayerId);
     const p = new URLSearchParams({ card: newCard, code: roomCode, player: currentPlayerId });
     window.location.href = '/html/game.html?' + p.toString();
 });
@@ -1081,8 +1197,37 @@ socket.on('auto-skip-warning', ({ countdown }) => {
 });
 
 
-// Game over
-socket.on('game-over', ({ winner, message, hostId }) => {
+// Game over — mit voller Auflösung aller Rollen und Sonderereignisse
+function renderGameOverReveal(reveal) {
+    const revealBox   = document.getElementById('game-over-reveal');
+    const revealGrid  = document.getElementById('game-over-reveal-grid');
+    const revealNotes = document.getElementById('game-over-reveal-notes');
+    if (!reveal?.players?.length) { revealBox.hidden = true; return; }
+
+    revealGrid.innerHTML = reveal.players.map(p => {
+        const r = ROLES.find(x => x.id === p.roleId);
+        const badges =
+            (p.isLover ? '<span class="go-player__badge" title="Liebespaar">&#x2764;</span>' : '') +
+            (p.isWolf && !WOLF_CARD_IDS.has(p.roleId)
+                ? '<span class="go-player__badge" title="Wurde zum Werwolf">&#x1F43A;</span>' : '');
+        return `
+        <div class="go-player${p.isAlive ? '' : ' is-dead'}${p.id === currentPlayerId ? ' is-me' : ''}">
+            <div class="go-player__imgwrap">
+                <img class="go-player__img" src="${r ? `/assets/${r.image}` : '/assets/backside.jpeg'}" alt="${esc(p.roleName)}">
+                ${p.isAlive ? '' : '<span class="go-player__dead">&#x2620;</span>'}
+                ${badges ? `<span class="go-player__badges">${badges}</span>` : ''}
+            </div>
+            <span class="go-player__name">${esc(p.name)}</span>
+            <span class="go-player__role">${esc(p.roleName)}</span>
+        </div>`;
+    }).join('');
+
+    revealNotes.innerHTML = (reveal.notes ?? []).map(n => `<li>${esc(n)}</li>`).join('');
+    revealNotes.hidden = !(reveal.notes?.length > 0);
+    revealBox.hidden = false;
+}
+
+socket.on('game-over', ({ winner, message, hostId, reveal }) => {
     hideOverlay();
     if (winner === 'everyone-dead') {
         gameOverWinner.textContent  = '';
@@ -1094,6 +1239,7 @@ socket.on('game-over', ({ winner, message, hostId }) => {
     const labels = { lovers: 'Liebespaar', wolves: 'Werwölfe', villagers: 'Dorfbewohner', 'einsamer-wolf': 'Einsamer Wolf' };
     gameOverWinner.textContent  = labels[winner] ?? winner;
     gameOverMessage.textContent = message;
+    renderGameOverReveal(reveal);
     gameOverOverlay.hidden = false;
 
     if (hostId && hostId === socket.id) {

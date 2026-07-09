@@ -65,3 +65,39 @@
 - Fix 3: join-spectator akzeptiert auch Spieler in pendingDeaths und sendet sofort einen Schnappschuss (Phase, Events, Spielerliste) — kein Warten mehr auf das nächste Ereignis
 - Bots werden nicht in g.spectators aufgenommen
 - Getestet: 4-Spieler-Test — Nacht-Opfer erhält you-are-dead, wird Zuschauer und empfängt sofort Events + Rollenliste
+
+## [2026-07-09 21:00] Game-Over-Auflösung + namentliche Anklagen/Stimmen
+
+- **Auflösung am Spielende:** `game-over` enthält jetzt `reveal` mit allen Spielern (Name, Rolle, Kartenbild, tot/lebendig, Wolf-Status, Liebespaar) und `notes` mit Sonderereignissen; gesammelt in `g.reveals` bei: Amor (Liebespaar), Ergebene Magd (Rollenübernahme), Wildes Kind (Wolf-Mutation), Jack the Ripper (Wolf-Mutation), Dieb (Rollentausch)
+- Client (`game.js`/`game.html`/`game.css`): Game-Over-Overlay zeigt Karten-Grid aller Spieler mit Badges (☠ tot, ❤ Liebespaar, 🐺 verwandelter Wolf) plus Ereignis-Liste; Box scrollbar für große Runden
+- **Namentliche Abstimmungen:** `day-accusation-update` und `day-vote-update` senden `pairs` (wer → wen, null = überspringt/enthält sich); Erzähler bekommt sie in `progress.pairs`
+- Client: neue Live-Liste im Tag-Panel („Anklagen" / „Stimmen") für alle Spieler sichtbar, auch im Warte-Zustand; Erzähler-Ansicht zeigt die Paare unter dem Fortschritt
+- Getestet: automatisierter E2E-Lauf (4 Clients, komplette Runde bis Dorfsieg) — 11/11 bestanden
+
+## [2026-07-10 00:15] Reload mitten im Spiel repariert (Reconnect stellt volle UI wieder her)
+
+- Problem: Nach einem Seiten-Reload schickte der Server nur ein nacktes `phase-changed {phase, round}` — dem Client fehlten Spielerlisten, Angeklagte, Stimmenstände etc., daher blieb die Phasen-UI leer, der eigene Zug verschwand und Werwölfe sahen ihren Abstimmungsstand nicht mehr
+- `pushCurrentGameState` rekonstruiert jetzt den kompletten Live-Zustand je Phase:
+  - Nacht: `phase-changed` (Atmosphäre/Runde) + eigener Zug; bei der Wolfsrunde zusätzlich `wolf-vote-update` mit aktuellem Stimmenstand inkl. eigener Stimme; Wartende bekommen `night-waiting` mit aktiver Gruppe
+  - Anklage-Phase: Spielerliste, max. Anklagen, bisherige namentliche Anklagen (`day-accusation-update`), `day-nomination-done` falls schon angeklagt
+  - Abstimmung: Angeklagte mit Anklage-Zahlen (Stichwahl-bewusst), bisherige Stimmen, `day-vote-done` falls schon gewählt
+  - Morgen/Ergebnis: `night-summary` mit Spielerliste (+ `morning-reveal`-Nachreichung), `day-result` mit Eliminiertem/Stimmverteilung
+  - Spielende: `game-over` samt Auflösung wird gespeichert (`g.gameOverPayload`) und Reconnects (auch Erzähler/Tote) erneut zugestellt
+- Client (`game.js`): `dayAlive` wird zentral aus jeder mitgelieferten Spielerliste abgeleitet (ging beim Reload verloren und blockierte Abstimmungs-/Ergebnis-UI); `showDayWaitResult` blendet das Tag-Panel selbst ein
+- Getestet: E2E-Reload-Test (Wolf lädt während Abstimmung neu und kann weiterwählen; Spieler lädt am Tag neu und kann anklagen; Reload nach Spielende zeigt Auflösung) — 8/8 bestanden
+
+## [2026-07-10 01:15] Handy-Reload repariert: veraltete Spieler-ID + zu kurze Karenzzeit
+
+- Ursache: Die Spielseite nahm die Spieler-ID für den Resume aus der URL. Am Handy baut der Browser die Socket-Verbindung aber ständig neu auf (Bildschirm aus, App-Wechsel) — der Server kennt den Spieler dann unter einer neuen ID, die URL veraltet. Ein Seiten-Reload schickte die alte ID → `resume-error` → Client blieb stumm auf leerer Seite
+- `game.js`: aktuelle ID wird bei jedem `resume-ok` in `sessionStorage` UND in der URL nachgeführt; beim Laden hat der sessionStorage-Stand Vorrang (raum-gebunden); `lobby.js` legt die ID beim Spielstart ebenfalls ab, `narrator.js` führt sie bei `resume-ok` nach
+- Neuer `resume-error`-Handler: sichtbare Meldung + Weiterleitung zur Startseite statt stummem Hängen
+- `server.js`: Karenzzeit bei Verbindungsabbruch im laufenden Spiel von 15 s auf 60 s erhöht (Lobby bleibt 15 s) — vorher galt ein kurzer App-Wechsel am Handy als endgültiges Verlassen (= Tod des Spielers)
+- Regression: Reload-E2E-Test weiterhin 8/8 bestanden
+
+## [2026-07-10 01:45] Rückkehr auch nach langem Verbindungsabbruch möglich
+
+- Problem: Handys frieren Hintergrund-Tabs ein (Bildschirm aus, App-Wechsel) — beim Zurückkehren lädt Chrome die Seite neu, aber der Server hatte den Spieler nach Ablauf der Karenzzeit ENDGÜLTIG aus `room.players` entfernt → `resume-error` → zurück zur Startseite, kein Weg zurück ins Spiel
+- Im laufenden Spiel werden getrennte Spieler jetzt nicht mehr entfernt, sondern nur als `isConnected: false` markiert: spielmechanisch sterben sie weiterhin (`handleGameLeave`, damit keine Phase blockiert), bleiben aber im Raum und können jederzeit per Reload als Geist zurückkehren; in der Lobby wird wie bisher entfernt
+- Raum-Aufräumen jetzt über „kein Mensch mehr verbunden" statt „keine Menschen mehr in der Liste"; Host-Übergabe geht an den ersten verbundenen Menschen (alter Host verliert das Flag); `resume-game`/`rejoin-lobby` setzen `isConnected` zurück
+- Nebeneffekt: Namen getrennter Spieler bleiben für Ereignisprotokoll und Spielende-Auflösung erhalten
+- Karenzzeiten per Env übersteuerbar (`GRACE_GAME_MS`, Standard 60 s / `GRACE_LOBBY_MS`, Standard 15 s) — genutzt vom neuen E2E-Test „Rückkehr nach Karenzzeit" (3/3 bestanden; Reload- und Host-Transfer-Tests weiterhin grün)

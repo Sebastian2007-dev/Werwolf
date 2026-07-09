@@ -9,8 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
-    <link rel="stylesheet" href="/css/app.css">
-    <link rel="stylesheet" href="/css/narrator.css">
+    <link rel="stylesheet" href="/css/app.css?v=2">
+    <link rel="stylesheet" href="/css/narrator.css?v=2">
+    <link rel="stylesheet" href="/css/voice.css?v=2">
 </head>
 <body>
 
@@ -83,7 +84,27 @@
         </article>
     </dialog>
 
+    <footer class="legal-links" aria-label="Rechtliches &amp; Hilfe">
+        <a href="/html/index.html#tutorial" target="_blank" rel="noopener">Tutorial</a>
+        <a href="/html/index.html#impressum" target="_blank" rel="noopener">Impressum</a>
+        <a href="/html/index.html#datenschutz" target="_blank" rel="noopener">Datenschutz</a>
+        <a href="/html/index.html#nutzung" target="_blank" rel="noopener">Nutzungsbedingungen</a>
+    </footer>
+
+    <!-- Voice-Chat-Leiste -->
+    <div class="voice-bar" id="voice-bar">
+        <button class="voice-bar__join" id="voice-join">&#x1F399; Voice</button>
+        <div class="voice-bar__controls" id="voice-controls" hidden>
+            <div class="voice-bar__status">
+                <span class="voice-bar__channel" id="voice-channel"></span>
+                <span class="voice-bar__peers" id="voice-peers"></span>
+            </div>
+            <button class="voice-bar__btn" id="voice-mute" title="Mikrofon stummschalten">&#x1F399;</button>
+            <button class="voice-bar__btn voice-bar__btn--leave" id="voice-leave" title="Voice verlassen">&#x2715;</button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/narrator.js" type="module"></script>
+    <script src="/js/narrator.js?v=2" type="module"></script>
 </body>
 </html>

@@ -9,8 +9,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
-    <link rel="stylesheet" href="/css/app.css">
-    <link rel="stylesheet" href="/css/lobby.css">
+    <link rel="stylesheet" href="/css/app.css?v=2">
+    <link rel="stylesheet" href="/css/lobby.css?v=2">
+    <link rel="stylesheet" href="/css/voice.css?v=2">
+    <link rel="stylesheet" href="/css/tutorial.css?v=2">
 </head>
 <body>
 
@@ -21,6 +23,7 @@
             <span class="lh__code" id="room-code-display">——</span>
             <button class="lh__copy" id="copy-btn" title="Code kopieren">&#10697;</button>
             <button class="lh__qr" id="qr-btn" title="QR-Code anzeigen">QR</button>
+            <button class="tutorial-help-btn" id="tutorial-btn" title="Tutorial anzeigen">?</button>
         </div>
     </header>
 
@@ -106,8 +109,42 @@
     </button>
     <div class="chat-backdrop" id="chat-backdrop"></div>
 
+    <!-- Tutorial-Overlay -->
+    <div class="tutorial-overlay" id="tutorial-overlay" hidden>
+        <div class="tutorial-box">
+            <button class="tutorial-box__close" id="tutorial-close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <div class="tutorial-box__icon" id="tutorial-icon"></div>
+            <h2 class="tutorial-box__title" id="tutorial-title"></h2>
+            <div class="tutorial-box__text" id="tutorial-text"></div>
+            <div class="tutorial-box__dots" id="tutorial-dots"></div>
+            <div class="tutorial-box__nav">
+                <button class="tutorial-nav-btn" id="tutorial-prev">&#8592; Zur&uuml;ck</button>
+                <button class="tutorial-nav-btn tutorial-nav-btn--next" id="tutorial-next">Weiter &#8594;</button>
+            </div>
+            <p class="tutorial-box__storage-note">Gespeichert wird nur lokal in deinem Browser, dass du dieses Tutorial bereits gesehen hast &mdash; keine Cookies, keine Daten an Dritte.</p>
+            <nav class="legal-links legal-links--compact" aria-label="Rechtliches">
+                <a href="/html/index.html#impressum" target="_blank" rel="noopener">Impressum</a>
+                <a href="/html/index.html#datenschutz" target="_blank" rel="noopener">Datenschutz</a>
+                <a href="/html/index.html#nutzung" target="_blank" rel="noopener">Nutzungsbedingungen</a>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Voice-Chat-Leiste -->
+    <div class="voice-bar" id="voice-bar">
+        <button class="voice-bar__join" id="voice-join">&#x1F399; Voice</button>
+        <div class="voice-bar__controls" id="voice-controls" hidden>
+            <div class="voice-bar__status">
+                <span class="voice-bar__channel" id="voice-channel"></span>
+                <span class="voice-bar__peers" id="voice-peers"></span>
+            </div>
+            <button class="voice-bar__btn" id="voice-mute" title="Mikrofon stummschalten">&#x1F399;</button>
+            <button class="voice-bar__btn voice-bar__btn--leave" id="voice-leave" title="Voice verlassen">&#x2715;</button>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/lobby.js" type="module"></script>
+    <script src="/js/lobby.js?v=2" type="module"></script>
 </body>
 </html>

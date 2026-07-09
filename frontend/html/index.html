@@ -9,7 +9,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
-    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/app.css?v=2">
+    <link rel="stylesheet" href="/css/tutorial.css?v=2">
 </head>
 <body>
 
@@ -45,7 +46,8 @@
     <footer class="footer">
         <div class="footer__inner">
             <span class="footer__copy">&copy; 2026 Werwolf</span>
-            <nav class="footer__nav" aria-label="Rechtliches">
+            <nav class="footer__nav" aria-label="Rechtliches &amp; Hilfe">
+                <button class="footer__link" id="tutorial-btn">Tutorial</button>
                 <button class="footer__link" data-modal="impressum">Impressum</button>
                 <button class="footer__link" data-modal="datenschutz">Datenschutz</button>
                 <button class="footer__link" data-modal="nutzung">Nutzungsbedingungen</button>
@@ -80,12 +82,16 @@
             <h3>1. Verantwortlicher</h3>
             <p>Sebastian Wendt &mdash; <a href="mailto:sebastianwendt07@gmail.com">sebastianwendt07@gmail.com</a></p>
             <h3>2. Welche Daten werden verarbeitet?</h3>
-            <p>Spielerdaten (Nickname, Raum-ID) werden ausschlie&szlig;lich f&uuml;r die Dauer der Sitzung im Arbeitsspeicher des Servers gehalten und beim Schlie&szlig;en der Verbindung gel&ouml;scht. Es findet keine dauerhafte Speicherung oder Weitergabe an Dritte statt.</p>
-            <h3>3. Cookies</h3>
-            <p>Es werden keine Tracking- oder Werbecookies eingesetzt.</p>
-            <h3>4. Server-Logs</h3>
+            <p>Spielerdaten (Nickname, Raum-ID) sowie Chat-Nachrichten werden ausschlie&szlig;lich f&uuml;r die Dauer der Sitzung im Arbeitsspeicher des Servers gehalten und sp&auml;testens beim Aufl&ouml;sen des Raums gel&ouml;scht. Es findet keine dauerhafte Speicherung oder Weitergabe an Dritte statt.</p>
+            <h3>3. Cookies &amp; lokale Speicherung</h3>
+            <p>Es werden keine Tracking- oder Werbecookies eingesetzt. Der Browser speichert lediglich rein funktionale Einstellungen lokal auf deinem Ger&auml;t (localStorage/sessionStorage): ob du das Tutorial bereits gesehen hast, deine Voice-Chat-Einstellung sowie Verbindungsdaten zum Wiederherstellen der Sitzung nach einem Reload. Diese Daten verlassen dein Ger&auml;t nicht und sind nach &sect;&nbsp;25&nbsp;Abs.&nbsp;2 TTDSG einwilligungsfrei.</p>
+            <h3>4. Sprach-Chat (WebRTC)</h3>
+            <p>Der Sprach-Chat ist freiwillig und startet erst nach deinem Klick und deiner Mikrofon-Freigabe. Das Audio wird direkt zwischen den Browsern der Teilnehmer &uuml;bertragen (Peer-to-Peer), l&auml;uft nicht &uuml;ber unseren Server und wird nicht aufgezeichnet. Technisch bedingt k&ouml;nnen die Teilnehmer einer Sprachrunde dabei gegenseitig ihre IP-Adressen sehen. Zum Verbindungsaufbau wird ein STUN-Server von Google kontaktiert; dabei wird deine IP-Adresse an Google &uuml;bermittelt (m&ouml;glicherweise in die USA).</p>
+            <h3>5. Externe Inhalte (CDNs)</h3>
+            <p>Diese Seite l&auml;dt Schriftarten von Google Fonts und eine QR-Code-Bibliothek vom CDN jsdelivr. Beim Laden wird deine IP-Adresse an diese Anbieter &uuml;bermittelt.</p>
+            <h3>6. Server-Logs</h3>
             <p>Der Server protokolliert Verbindungen in anonymisierter Form (Zeitstempel, aufgerufene URL). Protokolldaten werden nach 7 Tagen automatisch gel&ouml;scht.</p>
-            <h3>5. Deine Rechte</h3>
+            <h3>7. Deine Rechte</h3>
             <p>Du hast das Recht auf Auskunft, Berichtigung und L&ouml;schung deiner Daten (Art.&nbsp;15&ndash;17 DSGVO). Anfragen an: <a href="mailto:sebastianwendt07@gmail.com">sebastianwendt07@gmail.com</a></p>
         </article>
     </dialog>
@@ -103,6 +109,22 @@
         </article>
     </dialog>
 
-    <script src="/js/app.js"></script>
+    <!-- Tutorial-Overlay -->
+    <div class="tutorial-overlay" id="tutorial-overlay" hidden>
+        <div class="tutorial-box">
+            <button class="tutorial-box__close" id="tutorial-close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <div class="tutorial-box__icon" id="tutorial-icon"></div>
+            <h2 class="tutorial-box__title" id="tutorial-title"></h2>
+            <div class="tutorial-box__text" id="tutorial-text"></div>
+            <div class="tutorial-box__dots" id="tutorial-dots"></div>
+            <div class="tutorial-box__nav">
+                <button class="tutorial-nav-btn" id="tutorial-prev">&#8592; Zur&uuml;ck</button>
+                <button class="tutorial-nav-btn tutorial-nav-btn--next" id="tutorial-next">Weiter &#8594;</button>
+            </div>
+            <p class="tutorial-box__storage-note">Gespeichert wird nur lokal in deinem Browser, dass du dieses Tutorial bereits gesehen hast &mdash; keine Cookies, keine Daten an Dritte.</p>
+        </div>
+    </div>
+
+    <script src="/js/app.js?v=2" type="module"></script>
 </body>
 </html>

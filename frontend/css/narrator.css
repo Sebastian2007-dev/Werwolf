@@ -363,3 +363,17 @@ body::before {
     }
     .log-entries { min-height: 10rem; }
 }
+
+/* ── Namentliche Anklage-/Stimmliste unter dem Phasen-Status ────────────────── */
+.phase-card__pairs {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    line-height: 1.7;
+}
+.phase-card__pairs strong {
+    color: var(--accent);
+    font-weight: 700;
+}

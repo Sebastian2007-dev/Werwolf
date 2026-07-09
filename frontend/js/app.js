@@ -1,3 +1,8 @@
+import { initTutorial } from '/js/tutorial.js';
+
+// Tutorial: Footer-Knopf öffnet es (keine Auto-Anzeige — die macht die Lobby)
+const tutorial = initTutorial();
+
 // Modal open/close
 const openModal = (id) => {
     const modal = document.getElementById('modal-' + id);
@@ -18,3 +23,16 @@ document.querySelectorAll('.modal').forEach((modal) => {
         if (e.target === modal) closeModal(modal);
     });
 });
+
+// Deep-Links: /html/index.html#impressum|#datenschutz|#nutzung öffnen das
+// jeweilige Modal direkt, #tutorial startet das Tutorial — alles fest verlinkbar
+const LEGAL_MODALS = ['impressum', 'datenschutz', 'nutzung'];
+
+function openModalFromHash() {
+    const hash = window.location.hash.replace('#', '');
+    if (LEGAL_MODALS.includes(hash)) openModal(hash);
+    if (hash === 'tutorial') tutorial.open(0);
+}
+
+openModalFromHash();
+window.addEventListener('hashchange', openModalFromHash);
