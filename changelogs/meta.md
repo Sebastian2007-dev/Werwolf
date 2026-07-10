@@ -36,3 +36,15 @@
 - Deployment-Ziel ergänzt: Linux-Server (case-sensitive Dateipfade beachten)
 - Externe Bibliotheken via CDN ausdrücklich als erlaubt dokumentiert
 - Tech-Stack-Beschreibung angepasst (kein reines "kein Framework mehr" — CDNs erlaubt)
+
+## [2026-07-09 22:00] CLAUDE.md: Abschnitt „Rechtliches" ergänzt
+
+- Neue Richtlinie: bei jeder Änderung prüfen, ob Impressum/Datenschutzerklärung angepasst werden müssen
+- Dokumentiert: funktionale Browser-Speicherung (Tutorial, Voice-Präferenz) braucht kein Cookie-Banner (§ 25 Abs. 2 TTDSG); Google Fonts/jsdelivr/STUN und WebRTC-IP-Sichtbarkeit gehören in die Datenschutzerklärung; Impressums-/Datenschutz-Seiten fehlen noch und sollten ergänzt werden
+
+## [2026-07-09 22:45] Rechtstexte verlinkbar gemacht + Datenschutz aktualisiert
+
+- `app.js`: Hash-Deep-Links — `/html/index.html#impressum|#datenschutz|#nutzung` öffnen das jeweilige Modal direkt (feste, teilbare URLs für die Rechtstexte)
+- Datenschutz-Modal (`index.html`) um die neuen Features ergänzt: lokale Speicherung (Tutorial/localStorage, Voice-Präferenz/sessionStorage, einwilligungsfrei nach § 25 Abs. 2 TTDSG), Sprach-Chat (WebRTC Peer-to-Peer, IP-Sichtbarkeit unter Teilnehmern, Google-STUN), externe CDNs (Google Fonts, jsdelivr); Chat-Nachrichten in Abschnitt 2 aufgenommen; Abschnitte neu nummeriert (1–7)
+- Rechts-Links jetzt von jeder Seite erreichbar: `start.html`/`join.html`/`narrator.html` mit `legal-links`-Footer; Lobby & Spiel über die Tutorial-Box („?"-Knopf, öffnet neuen Tab)
+- CLAUDE.md-Abschnitt „Rechtliches" korrigiert: Rechtstexte existieren als Modale auf der Startseite (vorher fälschlich als fehlend beschrieben), Verlinkungsstruktur dokumentiert

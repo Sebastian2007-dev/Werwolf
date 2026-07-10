@@ -1,0 +1,174 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   TUTORIAL — Schritt-für-Schritt-Einführung (Lobby & Spiel)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.tutorial-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(4, 3, 12, 0.88);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+.tutorial-overlay[hidden] { display: none; }
+
+.tutorial-box {
+    position: relative;
+    width: 100%;
+    max-width: 480px;
+    max-height: calc(100vh - 3rem);
+    max-height: calc(100dvh - 3rem);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 2rem 1.75rem 1.5rem;
+    background: var(--bg-modal);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    text-align: center;
+    animation: tutorial-appear 0.35s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes tutorial-appear {
+    from { opacity: 0; transform: scale(0.92) translateY(14px); }
+    to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
+.tutorial-box__close {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.7rem;
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+.tutorial-box__close:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text);
+}
+
+.tutorial-box__icon {
+    font-size: 2.6rem;
+    line-height: 1;
+}
+
+.tutorial-box__title {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.03em;
+}
+
+.tutorial-box__text {
+    font-size: 0.9rem;
+    line-height: 1.65;
+    color: var(--text);
+    min-height: 9.5em;
+}
+.tutorial-box__text strong { color: var(--accent); font-weight: 700; }
+.tutorial-box__text em     { font-style: normal; color: var(--text); opacity: 0.85; }
+
+.tutorial-box__dots {
+    display: flex;
+    gap: 0.45rem;
+    margin-top: 0.25rem;
+}
+
+.tutorial-dot {
+    width: 9px;
+    height: 9px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    cursor: pointer;
+    transition: background var(--transition), transform var(--transition);
+}
+.tutorial-dot:hover     { background: rgba(255, 255, 255, 0.35); }
+.tutorial-dot.is-active {
+    background: var(--accent);
+    transform: scale(1.25);
+}
+
+.tutorial-box__nav {
+    display: flex;
+    gap: 0.7rem;
+    width: 100%;
+    justify-content: center;
+}
+
+.tutorial-nav-btn {
+    min-height: 44px;
+    padding: 0.55rem 1.4rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition), opacity var(--transition);
+}
+.tutorial-nav-btn:hover:not(:disabled) { border-color: var(--border-hover); }
+.tutorial-nav-btn:disabled { opacity: 0.35; cursor: default; }
+
+.tutorial-nav-btn--next {
+    background: rgba(200, 170, 110, 0.12);
+    border-color: rgba(200, 170, 110, 0.4);
+    color: var(--accent);
+}
+.tutorial-nav-btn--next:hover { background: rgba(200, 170, 110, 0.2); }
+
+.tutorial-box__storage-note {
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+/* ── Hilfe-Knopf „?" (öffnet das Tutorial erneut) ────────────────────────────── */
+.tutorial-help-btn {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color var(--transition), color var(--transition);
+}
+.tutorial-help-btn:hover {
+    border-color: var(--border-hover);
+    color: var(--accent);
+}
+
+/* Im Spiel-Header rechts platziert */
+.tutorial-help-btn--header {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+/* Kompakte Rechts-Links am Fuß der Tutorial-Box */
+.legal-links--compact {
+    padding: 0;
+    gap: 0.3rem 1rem;
+}

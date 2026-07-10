@@ -376,3 +376,22 @@ body::before {
         transform: none;
     }
 }
+/* === Rechts-Links (Impressum / Datenschutz / Nutzungsbedingungen) === */
+.legal-links {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    padding: 1rem;
+    position: relative;
+    z-index: 1;
+}
+
+.legal-links a {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+
+.legal-links a:hover { color: var(--accent); }

@@ -1,4 +1,6 @@
 import { ROLES, DESCRIPTIONS } from '/js/roles.js';
+import { initVoice } from '/js/voice.js';
+import { initTutorial } from '/js/tutorial.js';
 
 // ── URL params ────────────────────────────────────────────────────────────────
 const params      = new URLSearchParams(window.location.search);
@@ -14,6 +16,9 @@ if (!myName || (!isHost && !roomCode && !rejoinCode)) {
 // ── State ─────────────────────────────────────────────────────────────────────
 let myId        = null;
 let currentRoom = null;
+// Host-Status kann sich ändern: verlässt der Host die Lobby, befördert der
+// Server den nächsten Spieler — die UI muss dann live umschalten.
+let amHost      = isHost;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const overlay               = document.getElementById('overlay');
@@ -71,6 +76,8 @@ let chatFirstRender = true;
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 const socket = io();
+const voice    = initVoice(socket);
+const tutorial = initTutorial();
 
 let lobbyJoined = false;
 socket.on('connect', () => {
@@ -92,6 +99,8 @@ socket.on('connect', () => {
 socket.on('connect_error', () => showError('Verbindung zum Server fehlgeschlagen.'));
 
 socket.on('room-created', ({ roomCode: code }) => {
+    voice.resume();
+    tutorial.openIfNew();
     codeDisplay.textContent = code;
     overlay.hidden = true;
     startBtn.hidden = false;
@@ -106,6 +115,8 @@ socket.on('room-created', ({ roomCode: code }) => {
 });
 
 socket.on('room-joined', ({ roomCode: code }) => {
+    voice.resume();
+    tutorial.openIfNew();
     codeDisplay.textContent = code;
     overlay.hidden = true;
     readyBtn.hidden = false;
@@ -113,17 +124,36 @@ socket.on('room-joined', ({ roomCode: code }) => {
 
 socket.on('room-updated', (room) => {
     currentRoom = room;
+    updateHostState(room);
     renderPlayers(room.players);
     renderCards(room.selectedCards, room.players, room.narratorMode);
     renderChat(room.messages);
     updateFooter(room);
-    if (isHost && room.maxAccusations != null) {
+    if (amHost && room.maxAccusations != null) {
         maxAccusationsInput.value = room.maxAccusations;
     }
     if (isHost && room.botIntelligence != null) {
         botIntelSelect.value = String(room.botIntelligence);
     }
 });
+
+// Wurde ich zum Host befördert? → Host-Bedienelemente freischalten
+function updateHostState(room) {
+    const me = room.players.find(p => p.id === myId);
+    if (!me?.isHost || amHost) return;
+    amHost = true;
+    startBtn.hidden           = false;
+    narratorToggle.hidden     = false;
+    accusationsSetting.hidden = false;
+    addBotBtn.hidden          = false;
+    readyBtn.hidden           = true;
+    footerHint.textContent = '♔ Der Host hat die Lobby verlassen — du bist jetzt der Spielleiter.';
+    footerHint.hidden = false;
+    // URL anpassen, damit ein Seiten-Reload wieder als Host verbindet
+    const url = new URL(window.location.href);
+    url.searchParams.set('host', '1');
+    history.replaceState(null, '', url);
+}
 
 socket.on('join-error', ({ message }) => {
     // Host reloaded but server was restarted — create a fresh room
@@ -151,6 +181,10 @@ socket.on('game-started', ({ assignments, narratorMode }) => {
         return;
     }
     const card = assignments[pid];
+    // ID auch im sessionStorage ablegen — die Spielseite bevorzugt diesen Stand,
+    // weil die URL nach Reconnects veraltet
+    sessionStorage.setItem('ww_roomCode', code);
+    sessionStorage.setItem('ww_playerId', pid);
     const p = new URLSearchParams({ card, code, player: pid });
     window.location.href = '/html/game.html?' + p.toString();
 });
@@ -163,7 +197,7 @@ function renderPlayers(players) {
         const isMe  = p.id === myId;
         const reqRole = p.requestedCard ? ROLES.find(r => r.id === p.requestedCard) : null;
         const isDesNarrator = p.id === designatedNarrator;
-        const hostActions = (isHost && !isMe && !p.isHost) ? `
+        const hostActions = (amHost && !isMe && !p.isHost) ? `
             ${!p.isBot ? `<button class="pi-narrator${isDesNarrator ? ' is-active' : ''}" data-id="${p.id}" title="${isDesNarrator ? 'Erzähler-Rolle entfernen' : 'Als Erzähler festlegen'}">&#128214;</button>` : ''}
             <button class="pi-kick" data-id="${p.id}" title="${p.isBot ? 'Bot entfernen' : 'Spieler kicken'}">&#x2715;</button>` : '';
         return `
@@ -237,15 +271,15 @@ function renderCards(selectedCards, players, narratorMode) {
                     let cls = 'role-card';
                     if (selected)           cls += ' is-selected';
                     if (myRequest)          cls += ' is-requested';
-                    if (!isHost && !selected && !myRequest) cls += ' is-dimmed';
+                    if (!amHost && !selected && !myRequest) cls += ' is-dimmed';
                     cls += ' is-clickable';
 
                     return `
                     <button class="${cls}" data-role-id="${role.id}" title="${h(DESCRIPTIONS[role.id] ?? '')}">
                         <img class="role-card__img" src="/assets/${role.image}" alt="${h(role.name)}" loading="lazy">
                         <span class="role-card__name">${h(role.name)}</span>
-                        ${isHost && reqCount > 0 ? `<span class="role-card__badge">${reqCount}&#x2665;</span>` : ''}
-                        ${!isHost && myRequest   ? `<span class="role-card__badge">&#x2665;</span>` : ''}
+                        ${amHost && reqCount > 0 ? `<span class="role-card__badge">${reqCount}&#x2665;</span>` : ''}
+                        ${!amHost && myRequest   ? `<span class="role-card__badge">&#x2665;</span>` : ''}
                     </button>`;
                 }).join('')}
             </div>
@@ -255,7 +289,7 @@ function renderCards(selectedCards, players, narratorMode) {
     cardGrid.querySelectorAll('.role-card.is-clickable').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.roleId;
-            socket.emit(isHost ? 'toggle-card' : 'request-card', { cardId: id });
+            socket.emit(amHost ? 'toggle-card' : 'request-card', { cardId: id });
         });
     });
 }
@@ -312,7 +346,7 @@ function setReadyBtnState(isReady) {
 }
 
 function updateFooter(room) {
-    if (isHost) {
+    if (amHost) {
         const needed      = room.players.length - (room.narratorMode ? 1 : 0);
         const allReady    = room.players.every(p => p.isHost || p.isReady);
         const wolfSelected = room.selectedCards.some(id => id.startsWith('Werwolf_'));

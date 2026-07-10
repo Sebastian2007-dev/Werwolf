@@ -9,13 +9,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
-    <link rel="stylesheet" href="/css/app.css">
-    <link rel="stylesheet" href="/css/game.css">
+    <link rel="stylesheet" href="/css/app.css?v=2">
+    <link rel="stylesheet" href="/css/game.css?v=2">
+    <link rel="stylesheet" href="/css/voice.css?v=2">
+    <link rel="stylesheet" href="/css/tutorial.css?v=2">
 </head>
 <body>
 
     <header class="game-header">
         <span class="game-header__brand">Werwolf</span>
+        <button class="tutorial-help-btn tutorial-help-btn--header" id="tutorial-btn" title="Tutorial anzeigen">?</button>
     </header>
 
     <main class="game-main">
@@ -88,6 +91,14 @@
         <div class="game-over-box">
             <p class="game-over-box__eyebrow" id="game-over-winner"></p>
             <h2 class="game-over-box__title" id="game-over-message"></h2>
+
+            <!-- Auflösung: alle Rollen + besondere Ereignisse -->
+            <div class="go-reveal" id="game-over-reveal" hidden>
+                <p class="go-reveal__label">Aufl&ouml;sung</p>
+                <div class="go-reveal__grid" id="game-over-reveal-grid"></div>
+                <ul class="go-reveal__notes" id="game-over-reveal-notes"></ul>
+            </div>
+
             <div class="game-over-host-actions" id="game-over-host-actions" hidden>
                 <button class="game-btn game-btn--go-restart" id="go-restart-same-btn">Nochmal spielen &#x21BA;</button>
                 <button class="game-btn game-btn--go-new" id="go-restart-new-btn">Neue Karten &#x2192;</button>
@@ -131,6 +142,12 @@
         <!-- Wait / result UI -->
         <div id="day-wait-ui" hidden>
             <p class="day-panel__wait-text" id="day-wait-text">Warte auf andere Spieler&hellip;</p>
+        </div>
+
+        <!-- Live-Liste: wer klagt wen an / wer stimmt für wen -->
+        <div class="day-live-votes" id="day-live-votes" hidden>
+            <p class="day-live-votes__label" id="day-live-votes-label"></p>
+            <ul class="day-live-votes__list" id="day-live-votes-list"></ul>
         </div>
 
     </div>
@@ -221,17 +238,44 @@
             <!-- Wolf vote status -->
             <p class="wolf-status" id="wolf-status" hidden></p>
 
-            <!-- Witch special UI -->
+            <!-- Witch special UI: geführter Ablauf Heiltrank → Gifttrank → Übersicht -->
             <div class="witch-ui" id="witch-ui" hidden>
                 <p class="witch-ui__victim" id="witch-victim"></p>
-                <div class="witch-ui__choices">
-                    <button class="witch-btn witch-btn--heal" id="witch-heal" hidden>&#x2764; Heilen</button>
-                    <button class="witch-btn witch-btn--poison" id="witch-poison" hidden>&#x2620; Vergiften&hellip;</button>
+
+                <!-- Schritt 1: Heiltrank -->
+                <div class="witch-step" id="witch-step-heal" hidden>
+                    <p class="witch-step__question">M&ouml;chtest du deinen <strong>Heiltrank</strong> benutzen?</p>
+                    <div class="witch-ui__choices">
+                        <button class="witch-btn witch-btn--heal" id="witch-heal-yes">&#x2764; Ja, heilen</button>
+                        <button class="witch-btn witch-btn--pass" id="witch-heal-no">Nein</button>
+                    </div>
                 </div>
-                <div class="target-list" id="witch-poison-targets" hidden></div>
-                <div class="witch-ui__actions">
-                    <button class="witch-btn witch-btn--confirm" id="witch-confirm">Bestätigen &#x2713;</button>
-                    <button class="witch-btn witch-btn--pass" id="witch-pass">Nichts tun</button>
+
+                <!-- Schritt 2: Gifttrank -->
+                <div class="witch-step" id="witch-step-poison" hidden>
+                    <p class="witch-step__question">M&ouml;chtest du deinen <strong>Gifttrank</strong> benutzen?</p>
+                    <div class="witch-ui__choices">
+                        <button class="witch-btn witch-btn--poison" id="witch-poison-yes">&#x2620; Ja, vergiften</button>
+                        <button class="witch-btn witch-btn--pass" id="witch-poison-no">Nein</button>
+                    </div>
+                    <p class="witch-step__hint" id="witch-poison-hint" hidden>W&auml;hle, wen du vergiften willst:</p>
+                    <div class="target-list" id="witch-poison-targets" hidden></div>
+                </div>
+
+                <!-- Schritt 3: Übersicht mit Bestätigung -->
+                <div class="witch-step" id="witch-step-summary" hidden>
+                    <p class="witch-step__question">Deine Entscheidungen:</p>
+                    <div class="witch-summary">
+                        <div class="witch-summary__row">
+                            <span class="witch-summary__text" id="witch-sum-heal"></span>
+                            <button class="witch-summary__change" id="witch-change-heal">&#x270E; &Auml;ndern</button>
+                        </div>
+                        <div class="witch-summary__row">
+                            <span class="witch-summary__text" id="witch-sum-poison"></span>
+                            <button class="witch-summary__change" id="witch-change-poison">&#x270E; &Auml;ndern</button>
+                        </div>
+                    </div>
+                    <button class="witch-btn witch-btn--confirm" id="witch-confirm">Best&auml;tigen &#x2713;</button>
                 </div>
             </div>
 
@@ -272,7 +316,41 @@
         </div>
     </div>
 
+    <!-- Tutorial-Overlay -->
+    <div class="tutorial-overlay" id="tutorial-overlay" hidden>
+        <div class="tutorial-box">
+            <button class="tutorial-box__close" id="tutorial-close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <div class="tutorial-box__icon" id="tutorial-icon"></div>
+            <h2 class="tutorial-box__title" id="tutorial-title"></h2>
+            <div class="tutorial-box__text" id="tutorial-text"></div>
+            <div class="tutorial-box__dots" id="tutorial-dots"></div>
+            <div class="tutorial-box__nav">
+                <button class="tutorial-nav-btn" id="tutorial-prev">&#8592; Zur&uuml;ck</button>
+                <button class="tutorial-nav-btn tutorial-nav-btn--next" id="tutorial-next">Weiter &#8594;</button>
+            </div>
+            <p class="tutorial-box__storage-note">Gespeichert wird nur lokal in deinem Browser, dass du dieses Tutorial bereits gesehen hast &mdash; keine Cookies, keine Daten an Dritte.</p>
+            <nav class="legal-links legal-links--compact" aria-label="Rechtliches">
+                <a href="/html/index.html#impressum" target="_blank" rel="noopener">Impressum</a>
+                <a href="/html/index.html#datenschutz" target="_blank" rel="noopener">Datenschutz</a>
+                <a href="/html/index.html#nutzung" target="_blank" rel="noopener">Nutzungsbedingungen</a>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Voice-Chat-Leiste -->
+    <div class="voice-bar" id="voice-bar">
+        <button class="voice-bar__join" id="voice-join">&#x1F399; Voice</button>
+        <div class="voice-bar__controls" id="voice-controls" hidden>
+            <div class="voice-bar__status">
+                <span class="voice-bar__channel" id="voice-channel"></span>
+                <span class="voice-bar__peers" id="voice-peers"></span>
+            </div>
+            <button class="voice-bar__btn" id="voice-mute" title="Mikrofon stummschalten">&#x1F399;</button>
+            <button class="voice-bar__btn voice-bar__btn--leave" id="voice-leave" title="Voice verlassen">&#x2715;</button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/game.js" type="module"></script>
+    <script src="/js/game.js?v=2" type="module"></script>
 </body>
 </html>

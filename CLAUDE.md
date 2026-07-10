@@ -52,6 +52,17 @@ The [CodeGuide.md](CodeGuide.md) is the authoritative style guide. Key rules:
 
 **Naming** — functions are verbs (`startGame`, `calculateDamage`), booleans read as questions (`isAlive`, `hasVoted`).
 
+## Rechtliches (Impressum & Datenschutz)
+
+**Bei jeder Änderung prüfen, ob Impressum und Datenschutzerklärung angepasst werden müssen.** Relevante Auslöser:
+
+- **Browser-Speicherung** (Cookies, `localStorage`, `sessionStorage`): In der Datenschutzerklärung dokumentieren. Rein **funktionale** Speicherung ohne Tracking (aktuell: Tutorial-gesehen-Status in `localStorage`, Voice-Chat-Präferenz und Reconnect-Daten in `sessionStorage`) ist nach § 25 Abs. 2 TTDSG „unbedingt erforderlich" — dafür ist **kein Cookie-Banner nötig**. Ein Consent-Banner wird erst Pflicht, wenn Tracking-, Analyse- oder Werbe-Speicherung dazukommt. Vor jedem neuen Storage-Key prüfen, ob er funktional bleibt.
+- **Externe Dienste, die IP-Adressen der Nutzer erhalten** (aktuell: Google Fonts CDN, jsdelivr CDN für qrcodejs, Google STUN-Server für den Voice-Chat): müssen in der Datenschutzerklärung aufgeführt werden. Datenschutzfreundlicher wäre Self-Hosting der Fonts/Libraries — bei Gelegenheit umstellen.
+- **Voice-Chat (WebRTC)**: Audio läuft Peer-to-Peer; die Teilnehmer sehen dabei gegenseitig ihre IP-Adressen. In der Datenschutzerklärung erwähnen. Der Beitritt ist freiwillig (expliziter Klick + Mikrofon-Freigabe).
+- **Chat & Spielernamen**: werden nur im Arbeitsspeicher des Servers gehalten (keine Datenbank, kein Logging, weg nach Raum-Ende). Diesen Zustand beibehalten und so dokumentieren — er hält die Datenschutzerklärung einfach.
+
+**Wo die Rechtstexte liegen:** Impressum, Datenschutzerklärung und Nutzungsbedingungen sind Modale auf der Startseite (`frontend/html/index.html`), per Hash-Deep-Link direkt verlinkbar: `/html/index.html#impressum`, `#datenschutz`, `#nutzung` (Logik in `app.js`). Alle anderen Seiten verlinken dorthin — `start.html`/`join.html`/`narrator.html` über einen `legal-links`-Footer, Lobby und Spiel über die Tutorial-Box („?"-Knopf im Header, Links öffnen in neuem Tab). Bei neuen datenschutzrelevanten Features die Abschnitte im Datenschutz-Modal von `index.html` aktualisieren.
+
 ## Roles Reference
 
 All 20+ roles are defined in [roles.md](roles.md). Roles fall into three factions:

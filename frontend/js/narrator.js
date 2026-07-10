@@ -1,4 +1,5 @@
 import { ROLES, DESCRIPTIONS } from '/js/roles.js';
+import { initVoice } from '/js/voice.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const phaseBadge    = document.getElementById('phase-badge');
@@ -42,6 +43,7 @@ const PHASE_LABELS = {
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 const socket = io();
+const voice  = initVoice(socket);
 
 socket.on('connect', () => {
     if (!roomCode || !currentPlayerId) {
@@ -54,7 +56,10 @@ socket.on('connect', () => {
 
 socket.on('resume-ok', () => {
     currentPlayerId = socket.id; // Keep track of current socket ID for reconnects
+    sessionStorage.setItem('ww_roomCode', roomCode);
+    sessionStorage.setItem('ww_playerId', socket.id);
     nextBtn.disabled = false;
+    voice.resume();
 });
 
 socket.on('resume-error', ({ message }) => {
@@ -152,18 +157,30 @@ function updatePhaseCard(phase, entry, waiting, progress, hunterName) {
     } else if (phase === 'day-accusation' && progress) {
         phaseTitle.textContent = title;
         phaseHint.textContent  = hint;
-        phaseStatus.textContent = `${progress.nominated} / ${progress.total} nominiert (${progress.skipped} übersprungen)`;
+        phaseStatus.innerHTML = `${progress.nominated} / ${progress.total} nominiert (${progress.skipped} übersprungen)`
+            + renderPairs(progress.pairs, 'überspringt');
         phaseStatus.className = 'phase-card__status';
     } else if (phase === 'day-voting' && progress) {
         phaseTitle.textContent = title;
         phaseHint.textContent  = hint;
-        phaseStatus.textContent = `${progress.voted} / ${progress.total} abgestimmt`;
+        phaseStatus.innerHTML = `${progress.voted} / ${progress.total} abgestimmt`
+            + renderPairs(progress.pairs, 'enthält sich');
         phaseStatus.className = 'phase-card__status';
     } else {
         phaseTitle.textContent   = title;
         phaseHint.textContent    = hint;
         phaseStatus.textContent  = '';
     }
+}
+
+// Namentliche Liste "wer → wen" unter dem Fortschritt (Anklage & Abstimmung)
+function renderPairs(pairs, skipText) {
+    if (!pairs?.length) return '';
+    const lines = pairs.map(p => p.target
+        ? `<strong>${h(p.voter)}</strong> &rarr; ${h(p.target)}`
+        : `<strong>${h(p.voter)}</strong> ${skipText}`
+    ).join(' &middot; ');
+    return `<span class="phase-card__pairs">${lines}</span>`;
 }
 
 function renderPlayerGrid(players) {

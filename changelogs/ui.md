@@ -127,6 +127,35 @@
 - Ereignisprotokoll mit Zeitstempeln, Phasen-Einträge (Nacht/Tag/Stichwahl) gold hervorgehoben, Auto-Scroll nur wenn man unten steht
 - game.html: spectator-panel um Status-Zeile und Rollen-Grid erweitert; game.js: narrator-update-Handler komplett neu; game.css: Geisterblick-Styles
 
+## [2026-07-09 22:00] Host-Transfer repariert + Tutorial eingebaut
+
+- **Host-Transfer-Fix:** Verließ der Host die Lobby, übertrug der Server die Rechte zwar korrekt, aber die Lobby-UI des neuen Hosts blieb im Spieler-Modus (Host-Status kam nur aus dem URL-Parameter). Jetzt: `lobby.js` führt `amHost` dynamisch aus `room-updated` nach — bei Beförderung schalten Start-Knopf, Kartenwahl, Erzähler-Toggle, Bot-Knopf und Einstellungen live frei, Hinweis „Du bist jetzt der Spielleiter" erscheint, und die URL wird auf `host=1` umgeschrieben (Reload bleibt Host)
+- **Tutorial:** Neues 9-Schritte-Tutorial (`frontend/js/tutorial.js`, `frontend/css/tutorial.css`) erklärt Lobby, Kartenwahl, Spielleiter-Modus, Rolle, Nacht, Tag (Anklage/Abstimmung), Chat & Voice, Tod/Siegbedingungen
+- Öffnet sich automatisch beim ersten Lobby-Besuch; „?"-Knopf im Lobby- und Spiel-Header öffnet es jederzeit erneut
+- Gesehen-Status in `localStorage` (`ww_tutorial_seen`, versioniert — `TUTORIAL_VERSION` erhöhen, um es allen erneut zu zeigen); rein funktionale Speicherung, kein Cookie-Banner nötig
+- Bedienung: Weiter/Zurück, Punkte-Navigation, Pfeiltasten, Escape/Klick außerhalb schließt
+
+## [2026-07-09 23:00] Tutorial aus dem Footer aufrufbar
+
+- Startseiten-Footer (`index.html`): neuer „Tutorial"-Knopf neben den Rechts-Links; Tutorial-Overlay auf der Startseite eingebaut, `app.js` zum ES-Modul umgestellt und `initTutorial()` eingebunden
+- Neuer Deep-Link `/html/index.html#tutorial` öffnet das Tutorial direkt (analog zu `#impressum` etc.)
+- Footer von `start.html`, `join.html` und `narrator.html` verlinken das Tutorial ebenfalls (Deep-Link)
+
+## [2026-07-09 23:30] Hexe: geführter Trank-Ablauf + Cache-Fix für Deploys
+
+- **Hexe komplett umgebaut** (`game.html`/`game.js`/`game.css`): statt Buttons zum An-/Abwählen jetzt ein geführter Ablauf in 3 Schritten:
+  1. „Möchtest du deinen Heiltrank benutzen?" Ja/Nein (übersprungen, wenn kein Opfer oder Trank verbraucht)
+  2. „Möchtest du deinen Gifttrank benutzen?" Ja/Nein — bei Ja erscheint die Zielauswahl
+  3. Übersicht beider Entscheidungen mit „Ändern"-Knopf pro Trank, erst „Bestätigen ✓" schickt an den Server
+- „Ändern" beim Heiltrank kehrt nach der Antwort direkt zur Übersicht zurück; Server-Protokoll (`{heal, poisonTargetId}`) unverändert
+- **Cache-Fix** (`server.js`): HTML/JS/CSS werden mit `Cache-Control: no-cache` ausgeliefert (ETag-Revalidierung, 304 wenn unverändert) — vorher konnten Browser nach einem Deploy tagelang alte Dateien aus dem Cache verwenden (Ursache für „Auflösung wird nicht angezeigt"); Bilder unter `/assets` cachen 7 Tage
+
+## [2026-07-10 00:45] Handy: leeres Nacht-Overlay durch Cache-Versions-Mix behoben
+
+- Symptom: Auf dem Handy war das Nacht-Overlay offen, aber ohne Inhalt (nichts auswählbar) — Ursache: Der Browser mischte gecachte alte Dateien mit neuen (z. B. altes `game.js` + neues `game.html`); das alte Skript fand die umgebauten Hexen-Elemente nicht und stürzte beim Aufbau der Nacht-UI ab
+- Einmaliger Cache-Buster: alle lokalen CSS/JS-Einbindungen in den 6 HTML-Seiten tragen jetzt `?v=2` — für Browser sind das neue URLs, sie laden die Dateien garantiert frisch, sobald das HTML einmal neu geladen wurde
+- Zusammen mit dem `Cache-Control: no-cache`-Header vom Vortag können künftige Deploys keine Versions-Mixe mehr erzeugen; die Versionsnummer muss dafür NICHT mehr erhöht werden
+
 ## [2026-07-10 09:20] Lobby: Bot-Schlauheit-Einstellung + Persönlichkeits-Tags
 - Neue Host-Einstellung „Bot-Schlauheit" (Einfach/Normal/Schlau) im Lobby-Footer neben „Max. Anklagen" — synchronisiert über `set-bot-intelligence`/`room-updated`.
 - Bots zeigen in der Spielerliste ihre Persönlichkeit als kleinen Tag (aggressiv, zurückhaltend, Mitläufer, ausgewogen).
