@@ -825,3 +825,37 @@ body {
         padding: 1.5rem 1.25rem 1.25rem;
     }
 }
+
+/* ℹ-Knopf auf jeder Rollenkarte: Beschreibung ohne Langdruck (mobil-tauglich) */
+.role-card__info {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(8,8,15,0.72);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.85);
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: help;
+    z-index: 2;
+}
+.role-card__info:hover {
+    background: rgba(200,170,110,0.25);
+    border-color: rgba(200,170,110,0.6);
+}
+
+.role-info__desc {
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.5;
+    max-width: 320px;
+    margin: 0.4rem 0 0.8rem;
+    text-align: left;
+    white-space: pre-line;
+}

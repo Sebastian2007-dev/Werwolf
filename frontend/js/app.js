@@ -1,7 +1,25 @@
 import { initTutorial } from '/js/tutorial.js';
+import { APP_VERSION, CHANGELOG } from '/js/changelog-data.js';
 
 // Tutorial: Footer-Knopf öffnet es (keine Auto-Anzeige — die macht die Lobby)
 const tutorial = initTutorial();
+
+// ── Version & Changelog ───────────────────────────────────────────────────────
+const versionBtn = document.getElementById('version-btn');
+if (versionBtn) versionBtn.textContent = `v${APP_VERSION}`;
+
+const changelogList = document.getElementById('changelog-list');
+if (changelogList) {
+    const h = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    changelogList.innerHTML = CHANGELOG.map(entry => `
+        <section class="changelog__entry">
+            <h3 class="changelog__version">v${h(entry.version)} <span class="changelog__date">${h(entry.date)}</span></h3>
+            <ul class="changelog__changes">
+                ${entry.changes.map(c => `<li>${h(c)}</li>`).join('')}
+            </ul>
+        </section>
+    `).join('');
+}
 
 // Modal open/close
 const openModal = (id) => {

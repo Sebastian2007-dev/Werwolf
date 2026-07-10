@@ -139,3 +139,16 @@
 - `your-night-turn` enthält für die Wolfsrunde jetzt `pack`: die Namen aller Rudel-Mitglieder (ohne den Empfänger) — ab der 1. Werwolfrunde und auch nach einem Reconnect (`wolfPackNamesFor`, in advanceNight + pushCurrentGameState)
 - Verwandelte Wölfe (Wildes Kind, Jack, Hyde) sind automatisch enthalten, da die Liste aus den playerIds des Wolfszugs gebaut wird
 - Verifiziert per Socket-Test: Wolf-Client erhält die Rudel-Namen in jeder Wolfsrunde
+
+## [2026-07-10 13:01] Spielende-Timing, Liebespaar-Runde, Regel-Fixes, Max-Spieler (server.js)
+
+- **Game-over überschreibt die Lynch-Animation nicht mehr:** Steht der Sieger nach einer Tages-Abstimmung fest, wird trotzdem zuerst das day-result-Payload gesendet (Kartenaufdeckung läuft) und das Spielende erst nach ~8 s eingeblendet (`g.pendingWin`); der Erzähler kann mit „Weiter" abkürzen. Auch der Zigeunerin-Anklagetod läuft jetzt über finishDay. Nach Nacht-Toden gibt es vor dem Spielende ebenfalls eine Lesepause (3,5 s)
+- **Lynch-Auflösung länger sichtbar:** Auto-Modus bleibt 9 s (statt 4 s) im Tagesergebnis, wenn jemand gestorben ist
+- **Liebespaar-Bestätigungsrunde:** Nach Amors Wahl wird eine eigene Nachtrunde „Liebespaar" eingeschoben — beide Verliebten sehen ihren Partner und müssen bestätigen (actionType `lovers-ack`, wartet auf beide); Bots bestätigen automatisch
+- **Liebespaar-Sieg erweitert:** Das Paar gewinnt schon, wenn beide leben und höchstens ein weiterer Spieler übrig ist (≤ 3) — es kontrolliert dann jede Abstimmung
+- **Regel-Fix Jack the Ripper:** keine eigene Nachtwahl mehr — er mutiert ausschließlich, wenn die Dorfmatratze bei ihm schläft (jack_target komplett entfernt)
+- **Regel-Fix Ergebene Magd + Wildes Kind:** Erbt die Magd das Wilde Kind, darf sie in der nächsten Nacht ein EIGENES Idol wählen (`wildesKind_needsIdol` reaktiviert die firstNightOnly-Runde)
+- **Narr-Lynch:** narrInfo (Name + Karte) wird im day-result mitgesendet, damit der Client die Narrenfreiheit-Animation zeigen kann
+- **Max. Spieler einstellbar:** neues Host-Event `set-max-players` (3–100, Standard 20); gilt für Beitritte UND Bots, Raum-voll-Meldung beim Join
+- Hinweis geprüft: Einkaufende (Händler-Ziel) waren bereits korrekt von Anklage & Abstimmung ausgeschlossen (Server blockt, Client zeigt Hinweis)
+- E2E-getestet: Host als Hexe+Liebespaar, Wolf-Client, 7 Bots — volles Spiel inkl. Liebespaar-Runde und verzögertem Spielende

@@ -1819,10 +1819,12 @@ body.is-day .day-btn--confirm {
    ══════════════════════════════════════════════════════════════════════════════ */
 .day-live-votes {
     margin-top: 0.8rem;
-    padding-top: 0.7rem;
-    border-top: 1px solid var(--border);
+    padding: 0.7rem 0.75rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255,255,255,0.03);
     text-align: left;
-    max-height: 22vh;
+    max-height: 32vh;
     overflow-y: auto;
 }
 .day-live-votes[hidden] { display: none; }
@@ -1837,11 +1839,16 @@ body.is-day .day-btn--confirm {
 
 .day-live-votes__list {
     list-style: none;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 1.1rem;
-    font-size: 0.78rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 0.35rem 1.1rem;
+    font-size: 0.82rem;
     color: var(--text);
+}
+.day-live-votes__list li {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .day-live-votes__list strong {
     font-weight: 700;
@@ -2069,3 +2076,49 @@ body.is-day .day-btn--confirm {
     background: rgba(200,170,110,0.08);
 }
 .lynch-box__close[hidden] { display: none; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Liebespaar-Bestätigungsrunde (Amor hat gewählt)
+   ══════════════════════════════════════════════════════════════════════════════ */
+.lovers-ack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid rgba(224,100,140,0.35);
+    border-radius: 12px;
+    background: rgba(224,80,120,0.07);
+    text-align: center;
+}
+.lovers-ack[hidden] { display: none; }
+.lovers-ack__heart {
+    font-size: 2.4rem;
+    color: #e0608a;
+    text-shadow: 0 0 24px rgba(224,96,138,0.5);
+    animation: lovers-heartbeat 1.6s ease-in-out infinite;
+}
+@keyframes lovers-heartbeat {
+    0%, 100% { transform: scale(1); }
+    12%      { transform: scale(1.18); }
+    24%      { transform: scale(1); }
+    36%      { transform: scale(1.12); }
+    48%      { transform: scale(1); }
+}
+.lovers-ack__text {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    color: var(--text);
+    margin: 0;
+}
+.lovers-ack__hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* Narr überlebt den Lynch — Jubel-Variante der Kartenaufdeckung */
+.lynch-box__role.is-narr {
+    color: var(--accent);
+    text-shadow: 0 0 26px rgba(200,170,110,0.55);
+}

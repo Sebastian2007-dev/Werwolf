@@ -246,6 +246,8 @@ const witchConfirm  = document.getElementById('witch-confirm');
 const witchPoisonTargets = document.getElementById('witch-poison-targets');
 const wolfStatus    = document.getElementById('wolf-status');
 const wolfPack      = document.getElementById('wolf-pack');
+const loversAck     = document.getElementById('lovers-ack');
+const loversAckText = document.getElementById('lovers-ack-text');
 const viewResult    = document.getElementById('view-result');
 const viewResultText = document.getElementById('view-result-text');
 const viewResultImg  = document.getElementById('view-result-img');
@@ -287,6 +289,7 @@ function resetActionPanels() {
     wolfStatus.textContent = '';
     wolfPack.hidden      = true;
     wolfPack.textContent = '';
+    loversAck.hidden     = true;
     nightConfirm.disabled = false;
     nightState = { type: null, selected: [], maxSelect: 1, witchHealSelected: false, witchPoisonTarget: null };
 }
@@ -309,6 +312,7 @@ socket.on('your-night-turn', ({ group, hint, actionType, players, extra, pack })
     // Die tote Zigeunerin darf ihren Fluch noch aussprechen
     if (isDead && group !== 'Zigeunerin') return;
     viewingResult = false;
+    vibrate(); // Handy: dezent melden, dass man dran ist
     showOverlay();
     showActionUI();
     resetActionPanels();
@@ -441,6 +445,17 @@ socket.on('your-night-turn', ({ group, hint, actionType, players, extra, pack })
             showWait(targetId ? 'Deine Wahl wurde gespeichert.' : 'Du hast nichts getan.');
         };
 
+    } else if (actionType === 'lovers-ack') {
+        // Amor hat gewählt: beide Verliebten müssen bestätigen
+        loversAck.hidden = false;
+        loversAckText.textContent = `Du bist unsterblich verliebt in ${extra?.partnerName ?? '???'}!`;
+        nightConfirm.hidden = false;
+        nightConfirm.textContent = 'Verstanden ✓';
+        nightConfirm.onclick = () => {
+            socket.emit('night-action', { acknowledged: true });
+            showWait('Eure Liebe bleibt euer Geheimnis…');
+        };
+
     } else if (actionType === 'kill') {
         // Wolf majority vote UI
         targetList.hidden    = false;
@@ -571,11 +586,12 @@ socket.on('night-turn-done', () => {
 });
 
 // Phase transitions
-socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, alsoDied, voteResult }) => {
+socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, narrInfo, alsoDied, voteResult }) => {
     gchatOnPhase(phase);
     viewingResult = false;
-    // Namensliste der Anklagen/Stimmen gilt nur innerhalb einer Phase
-    if (['day-accusation', 'day-voting', 'night', 'day-result'].includes(phase)) clearLiveVotes();
+    // Namensliste der Anklagen/Stimmen gilt nur innerhalb einer Phase —
+    // im Tages-Ergebnis bleibt sie sichtbar, damit man nachlesen kann, wer wen gewählt hat
+    if (['day-accusation', 'day-voting', 'night'].includes(phase)) clearLiveVotes();
     // Lebend-Status aus jeder mitgelieferten Spielerliste ableiten — wichtig
     // nach einem Reload, sonst bleibt dayAlive fälschlich auf false
     if (players) dayAlive = players.some(p => p.id === currentPlayerId);
@@ -645,6 +661,9 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
                 .map(d => ({ ...d, cause: 'love' }));
             if (hunterShot) extras.push({ ...hunterShot, cause: 'hunter' });
             showLynchReveal(mainDeath, extras, !eliminated);
+        } else if (narrSurvived && narrInfo) {
+            // Der Narr wurde gelyncht, überlebt aber — eigene Jubel-Variante
+            showLynchReveal(narrInfo, [], false, { narr: true });
         }
     }
 });
@@ -866,7 +885,7 @@ function hideLynchReveal() {
     lynchOverlay.hidden = true;
 }
 
-function showLynchReveal(death, extras = [], byAccusation = false) {
+function showLynchReveal(death, extras = [], byAccusation = false, opts = {}) {
     hideLynchReveal();
 
     lynchEyebrow.textContent = byAccusation ? 'Der Tag fordert ein Opfer' : 'Das Dorf hat entschieden';
@@ -893,9 +912,14 @@ function showLynchReveal(death, extras = [], byAccusation = false) {
         lynchFlip.classList.add('is-revealed');
     }, 1200));
     lynchTimers.push(setTimeout(() => {
-        lynchRole.textContent = death.roleName;
-        lynchRole.classList.add('is-shown');
-        if (WOLF_CARD_IDS.has(death.roleId)) lynchRole.classList.add('is-wolf');
+        if (opts.narr) {
+            lynchRole.textContent = '🃏 Der Narr überlebt — Narrenfreiheit!';
+            lynchRole.classList.add('is-shown', 'is-narr');
+        } else {
+            lynchRole.textContent = death.roleName;
+            lynchRole.classList.add('is-shown');
+            if (WOLF_CARD_IDS.has(death.roleId)) lynchRole.classList.add('is-wolf');
+        }
 
         extras.forEach(x => {
             const line = document.createElement('p');
@@ -960,6 +984,7 @@ socket.on('morning-full-reveal', ({ deaths, hunterShot }) => {
 
 // Server asks Jäger to pick their target
 socket.on('hunter-shoot', ({ targets }) => {
+    vibrate();
     hunterSelectedId = null;
     hunterConfirm.hidden = true;
     buildTargetButtons(hunterTargetList, targets, (p, btn) => {
@@ -1004,6 +1029,11 @@ socket.on('morning-reveal', ({ deaths }) => {
 
 function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Handy: kurze, dezente Vibration — nur der Spieler selbst merkt, dass er dran ist
+function vibrate() {
+    try { navigator.vibrate?.([120, 60, 120]); } catch { /* nicht unterstützt (z. B. iOS) */ }
 }
 
 function showMorningScreen(players) {
@@ -1317,6 +1347,7 @@ function renderGameOverReveal(reveal) {
 
 socket.on('game-over', ({ winner, message, hostId, reveal }) => {
     hideOverlay();
+    hideLynchReveal();
     if (winner === 'everyone-dead') {
         gameOverWinner.textContent  = '';
         gameOverMessage.textContent = 'XD';
@@ -1515,4 +1546,69 @@ window.addEventListener('popstate', () => {
 // Escape schließt den Chat ebenfalls
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && gchatOpen) gchatClose();
+});
+
+// ── Verschiebbare Schwebeknöpfe (Chat & Voice) ────────────────────────────────
+// Beide Knöpfe lassen sich per Drag frei positionieren (z. B. wenn sie die
+// Stimmenliste verdecken); die Position bleibt im Browser gespeichert.
+function makeDraggable(el, storageKey) {
+    if (!el) return;
+    el.style.touchAction = 'none';
+
+    const applyPos = (x, y) => {
+        const maxX = window.innerWidth  - el.offsetWidth;
+        const maxY = window.innerHeight - el.offsetHeight;
+        el.style.left   = Math.min(Math.max(0, x), Math.max(0, maxX)) + 'px';
+        el.style.top    = Math.min(Math.max(0, y), Math.max(0, maxY)) + 'px';
+        el.style.right  = 'auto';
+        el.style.bottom = 'auto';
+    };
+
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+        try { const { x, y } = JSON.parse(saved); applyPos(x, y); } catch { /* ignorieren */ }
+    }
+
+    let startX = 0, startY = 0, origX = 0, origY = 0, dragging = false, moved = false;
+
+    el.addEventListener('pointerdown', (e) => {
+        dragging = true; moved = false;
+        startX = e.clientX; startY = e.clientY;
+        const rect = el.getBoundingClientRect();
+        origX = rect.left; origY = rect.top;
+    });
+
+    window.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - startX, dy = e.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < 8) return; // Klick von Drag unterscheiden
+        moved = true;
+        applyPos(origX + dx, origY + dy);
+    });
+
+    window.addEventListener('pointerup', () => {
+        if (!dragging) return;
+        dragging = false;
+        if (!moved) return;
+        const rect = el.getBoundingClientRect();
+        localStorage.setItem(storageKey, JSON.stringify({ x: rect.left, y: rect.top }));
+        // Klick direkt nach dem Drag unterdrücken (würde sonst Chat/Voice auslösen)
+        const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        el.addEventListener('click', swallow, { capture: true, once: true });
+        setTimeout(() => el.removeEventListener('click', swallow, { capture: true }), 400);
+    });
+
+    // Nach Fenster-Resize wieder in den sichtbaren Bereich holen
+    window.addEventListener('resize', () => {
+        const rect = el.getBoundingClientRect();
+        if (el.style.left) applyPos(rect.left, rect.top);
+    });
+}
+makeDraggable(document.getElementById('gchat-toggle'), 'ww_pos_chat');
+makeDraggable(document.getElementById('voice-bar'),    'ww_pos_voice');
+
+// ── Bildschutz ────────────────────────────────────────────────────────────────
+// Kontextmenü/Langdruck auf Kartenbildern unterbinden (handgemalte Karten)
+document.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('img')) e.preventDefault();
 });

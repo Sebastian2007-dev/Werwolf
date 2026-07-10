@@ -166,3 +166,15 @@
 - Overlay schließt per „Weiter"-Knopf oder automatisch beim Phasenwechsel (Nacht/neuer Tag); neue Styles `.lynch-overlay` etc. in game.css
 - **Rudel-Anzeige:** Werwölfe sehen in ihrer Nachtrunde ein rotes Info-Band „🐺 Dein Rudel: …" (bzw. „Du bist der einzige Werwolf."), gespeist aus dem neuen `pack`-Feld
 - Cache-Version für game.css/game.js auf v=3 erhöht
+
+## [2026-07-10 13:01] Liebespaar-UI, Narr-Animation, verschiebbare Knöpfe, Lobby-Infos, Changelog-Seite
+
+- **Liebespaar-Bestätigung:** eigener Nacht-Screen mit pochendem Herz „Du bist unsterblich verliebt in X!" + Verstanden-Knopf (game.html/game.css)
+- **Narr-Lynch-Animation:** Karte wird aufgedeckt, dann golden „🃏 Der Narr überlebt — Narrenfreiheit!" statt Rollenname
+- **Stimmenliste lesbar:** eigene Panel-Optik mit Rahmen, ein Eintrag pro Zeile (Grid), scrollbar bis 32 vh — und sie bleibt im Tagesergebnis stehen statt sofort zu verschwinden
+- **Chat- & Voice-Knopf verschiebbar:** per Drag frei positionierbar (Pointer-Events, 8-px-Schwelle unterscheidet Klick von Drag), Position wird im Browser gespeichert (`ww_pos_chat`/`ww_pos_voice`)
+- **Vibration:** Handy vibriert dezent bei eigenem Nachtzug und beim Jägerschuss (navigator.vibrate, iOS ignoriert es einfach)
+- **Lobby:** ℹ-Knopf auf jeder Rollenkarte öffnet die Beschreibung als Modal (mobil ohne Langdruck); neue Host-Einstellung „Max. Spieler" (3–100)
+- **Bildschutz:** Kontextmenü/Langdruck/Drag auf allen Kartenbildern unterbunden (app.css + contextmenu-Handler) — die handgemalten Karten sollen nicht einfach kopierbar sein
+- **Changelog & Version auf der Startseite:** Versions-Knopf im Footer (aus `changelog-data.js`, aktuell v1.1.0) öffnet „Was ist neu?"-Modal mit spielerfreundlichen Release-Notes
+- Cache-Versionen aller CSS/JS-Referenzen auf ?v=3 erhöht

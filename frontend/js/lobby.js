@@ -50,6 +50,15 @@ const accusationsMinus      = document.getElementById('accusations-minus');
 const accusationsPlus       = document.getElementById('accusations-plus');
 const botIntelSetting       = document.getElementById('bot-intel-setting');
 const botIntelSelect        = document.getElementById('bot-intel-select');
+const maxPlayersSetting     = document.getElementById('max-players-setting');
+const maxPlayersInput       = document.getElementById('max-players-input');
+const maxPlayersMinus       = document.getElementById('max-players-minus');
+const maxPlayersPlus        = document.getElementById('max-players-plus');
+const roleInfoModal         = document.getElementById('role-info-modal');
+const roleInfoTitle         = document.getElementById('role-info-title');
+const roleInfoDesc          = document.getElementById('role-info-desc');
+const roleInfoClose         = document.getElementById('role-info-close');
+const roleInfoBackdrop      = document.getElementById('role-info-backdrop');
 
 // Anzeige-Labels für die Bot-Persönlichkeiten (Server: player.personality)
 const PERSONALITY_LABELS = {
@@ -107,6 +116,7 @@ socket.on('room-created', ({ roomCode: code }) => {
     narratorToggle.hidden = false;
     accusationsSetting.hidden = false;
     botIntelSetting.hidden = false;
+    maxPlayersSetting.hidden = false;
     addBotBtn.hidden = false;
     // Persist code in URL so a page reload rejoins the same room
     const url = new URL(window.location.href);
@@ -135,6 +145,9 @@ socket.on('room-updated', (room) => {
     if (isHost && room.botIntelligence != null) {
         botIntelSelect.value = String(room.botIntelligence);
     }
+    if (amHost && room.maxPlayers != null) {
+        maxPlayersInput.value = room.maxPlayers;
+    }
 });
 
 // Wurde ich zum Host befördert? → Host-Bedienelemente freischalten
@@ -145,6 +158,8 @@ function updateHostState(room) {
     startBtn.hidden           = false;
     narratorToggle.hidden     = false;
     accusationsSetting.hidden = false;
+    botIntelSetting.hidden    = false;
+    maxPlayersSetting.hidden  = false;
     addBotBtn.hidden          = false;
     readyBtn.hidden           = true;
     footerHint.textContent = '♔ Der Host hat die Lobby verlassen — du bist jetzt der Spielleiter.';
@@ -276,8 +291,9 @@ function renderCards(selectedCards, players, narratorMode) {
 
                     return `
                     <button class="${cls}" data-role-id="${role.id}" title="${h(DESCRIPTIONS[role.id] ?? '')}">
-                        <img class="role-card__img" src="/assets/${role.image}" alt="${h(role.name)}" loading="lazy">
+                        <img class="role-card__img" src="/assets/${role.image}" alt="${h(role.name)}" loading="lazy" draggable="false">
                         <span class="role-card__name">${h(role.name)}</span>
+                        <span class="role-card__info" title="Was macht diese Rolle?" role="button" aria-label="Rollen-Info">&#9432;</span>
                         ${amHost && reqCount > 0 ? `<span class="role-card__badge">${reqCount}&#x2665;</span>` : ''}
                         ${!amHost && myRequest   ? `<span class="role-card__badge">&#x2665;</span>` : ''}
                     </button>`;
@@ -287,12 +303,32 @@ function renderCards(selectedCards, players, narratorMode) {
     `).join('');
 
     cardGrid.querySelectorAll('.role-card.is-clickable').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            // Klick auf das ℹ öffnet die Rollen-Beschreibung statt zu (de)selektieren
+            if (e.target.closest('.role-card__info')) {
+                openRoleInfo(btn.dataset.roleId);
+                return;
+            }
             const id = btn.dataset.roleId;
             socket.emit(amHost ? 'toggle-card' : 'request-card', { cardId: id });
         });
     });
 }
+
+// ── Rollen-Info-Modal (auch am Handy erreichbar, ohne Langdruck) ──────────────
+function openRoleInfo(roleId) {
+    const role = ROLES.find(r => r.id === roleId);
+    roleInfoTitle.textContent = role?.name ?? roleId;
+    roleInfoDesc.textContent  = DESCRIPTIONS[roleId] ?? 'Keine Beschreibung vorhanden.';
+    roleInfoModal.hidden = false;
+}
+roleInfoClose.addEventListener('click',    () => { roleInfoModal.hidden = true; });
+roleInfoBackdrop.addEventListener('click', () => { roleInfoModal.hidden = true; });
+
+// Bildschutz: Kontextmenü/Langdruck auf den handgemalten Karten unterbinden
+document.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('img')) e.preventDefault();
+});
 
 // ── Render: Chat ──────────────────────────────────────────────────────────────
 function renderChat(messages) {
@@ -485,6 +521,21 @@ accusationsPlus.addEventListener('click', () => {
 botIntelSelect.addEventListener('change', () => {
     const v = parseInt(botIntelSelect.value, 10);
     if (v >= 1 && v <= 3) socket.emit('set-bot-intelligence', { value: v });
+});
+
+// Max players setting
+function emitMaxPlayers() {
+    const v = parseInt(maxPlayersInput.value, 10);
+    if (v >= 3 && v <= 100) socket.emit('set-max-players', { value: v });
+}
+maxPlayersInput.addEventListener('change', emitMaxPlayers);
+maxPlayersMinus.addEventListener('click', () => {
+    const v = parseInt(maxPlayersInput.value, 10);
+    if (v > 3) { maxPlayersInput.value = v - 1; emitMaxPlayers(); }
+});
+maxPlayersPlus.addEventListener('click', () => {
+    const v = parseInt(maxPlayersInput.value, 10);
+    if (v < 100) { maxPlayersInput.value = v + 1; emitMaxPlayers(); }
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
