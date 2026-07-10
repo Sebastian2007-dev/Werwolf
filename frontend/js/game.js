@@ -194,6 +194,17 @@ function clearLiveVotes() {
 const morningOverlay  = document.getElementById('morning-overlay');
 const morningGrid     = document.getElementById('morning-grid');
 const morningDeaths   = document.getElementById('morning-deaths');
+
+// ── Lynch overlay refs ────────────────────────────────────────────────────────
+const lynchOverlay  = document.getElementById('lynch-overlay');
+const lynchEyebrow  = document.getElementById('lynch-eyebrow');
+const lynchName     = document.getElementById('lynch-name');
+const lynchFlip     = document.getElementById('lynch-card-flip');
+const lynchCardBack = document.getElementById('lynch-card-back');
+const lynchRole     = document.getElementById('lynch-role');
+const lynchExtra    = document.getElementById('lynch-extra');
+const lynchClose    = document.getElementById('lynch-close');
+let   lynchTimers   = [];
 document.getElementById('morning-card-peek').addEventListener('click', openCardModal);
 
 // ── Hunter overlay refs ───────────────────────────────────────────────────────
@@ -234,6 +245,7 @@ const witchChangePoison = document.getElementById('witch-change-poison');
 const witchConfirm  = document.getElementById('witch-confirm');
 const witchPoisonTargets = document.getElementById('witch-poison-targets');
 const wolfStatus    = document.getElementById('wolf-status');
+const wolfPack      = document.getElementById('wolf-pack');
 const viewResult    = document.getElementById('view-result');
 const viewResultText = document.getElementById('view-result-text');
 const viewResultImg  = document.getElementById('view-result-img');
@@ -273,6 +285,8 @@ function resetActionPanels() {
     witchPoisonTargets.innerHTML = '';
     wolfStatus.hidden    = true;
     wolfStatus.textContent = '';
+    wolfPack.hidden      = true;
+    wolfPack.textContent = '';
     nightConfirm.disabled = false;
     nightState = { type: null, selected: [], maxSelect: 1, witchHealSelected: false, witchPoisonTarget: null };
 }
@@ -291,7 +305,7 @@ function buildTargetButtons(container, players, onSelect) {
 }
 
 // Receive night turn
-socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
+socket.on('your-night-turn', ({ group, hint, actionType, players, extra, pack }) => {
     // Die tote Zigeunerin darf ihren Fluch noch aussprechen
     if (isDead && group !== 'Zigeunerin') return;
     viewingResult = false;
@@ -435,6 +449,14 @@ socket.on('your-night-turn', ({ group, hint, actionType, players, extra }) => {
         wolfStatus.textContent = 'Wähle ein Opfer:';
         nightConfirm.textContent = 'Bestätigen ✓';
 
+        // Rudel anzeigen: wer heult mit mir?
+        if (pack) {
+            wolfPack.hidden = false;
+            wolfPack.textContent = pack.length > 0
+                ? `🐺 Dein Rudel: ${pack.join(', ')}`
+                : '🐺 Du bist der einzige Werwolf.';
+        }
+
         buildTargetButtons(targetList, players, (p, btn) => {
             targetList.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
             btn.classList.add('is-selected');
@@ -566,6 +588,7 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
     if (phase === 'night') {
         morningOverlay.hidden = true;
         hunterOverlay.hidden = true;
+        hideLynchReveal();
         if (isDead) { nightOverlay.hidden = true; return; }
         dayPanel.hidden = true;
     }
@@ -574,6 +597,7 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
         morningOverlay.hidden = true;
         dayPanel.hidden = true;
         hunterOverlay.hidden = true;
+        hideLynchReveal();
     }
     if (phase === 'night-summary' && players) {
         hideOverlay();
@@ -581,6 +605,7 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
     }
     if (phase === 'day-accusation' && players) {
         morningOverlay.hidden = true;
+        hideLynchReveal();
         dayAlive = players.some(p => p.id === currentPlayerId);
         if (dayAlive) {
             if (awayPlayerId === currentPlayerId) {
@@ -610,6 +635,17 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
             || alsoDied?.some(d => d.id === currentPlayerId)) setDead();
         hunterOverlay.hidden = true;
         if (dayAlive && !isDead) showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDied, voteResult);
+
+        // Kartenaufdeckung des Getöteten für ALLE (auch Tote/Zuschauer):
+        // Hauptopfer ist der Gelynchte — oder z. B. die angeklagte Zigeunerin
+        const mainDeath = eliminated ?? alsoDied?.[0] ?? null;
+        if (mainDeath) {
+            const extras = (alsoDied ?? [])
+                .filter(d => d.id !== mainDeath.id)
+                .map(d => ({ ...d, cause: 'love' }));
+            if (hunterShot) extras.push({ ...hunterShot, cause: 'hunter' });
+            showLynchReveal(mainDeath, extras, !eliminated);
+        }
     }
 });
 
@@ -822,6 +858,58 @@ function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDi
         dayWaitText.appendChild(tallyLine);
     }
 }
+
+// ── Lynch-Animation: das Dorf hat jemanden getötet, die Karte wird aufgedeckt ──
+function hideLynchReveal() {
+    lynchTimers.forEach(clearTimeout);
+    lynchTimers = [];
+    lynchOverlay.hidden = true;
+}
+
+function showLynchReveal(death, extras = [], byAccusation = false) {
+    hideLynchReveal();
+
+    lynchEyebrow.textContent = byAccusation ? 'Der Tag fordert ein Opfer' : 'Das Dorf hat entschieden';
+    lynchName.textContent = death.name;
+    lynchRole.textContent = '';
+    lynchRole.className   = 'lynch-box__role';
+    lynchExtra.innerHTML  = '';
+    lynchClose.hidden     = true;
+    lynchFlip.classList.remove('is-revealed');
+
+    lynchCardBack.innerHTML = '';
+    const role = ROLES.find(r => r.id === death.roleId);
+    if (role) {
+        const img = document.createElement('img');
+        img.src = `/assets/${role.image}`;
+        img.alt = role.name;
+        lynchCardBack.appendChild(img);
+    }
+
+    lynchOverlay.hidden = false;
+
+    // Choreografie: Spannungspause → Karte umdrehen → Rolle + Folge-Tode einblenden
+    lynchTimers.push(setTimeout(() => {
+        lynchFlip.classList.add('is-revealed');
+    }, 1200));
+    lynchTimers.push(setTimeout(() => {
+        lynchRole.textContent = death.roleName;
+        lynchRole.classList.add('is-shown');
+        if (WOLF_CARD_IDS.has(death.roleId)) lynchRole.classList.add('is-wolf');
+
+        extras.forEach(x => {
+            const line = document.createElement('p');
+            line.className = 'lynch-box__extra-line';
+            line.textContent = x.cause === 'hunter'
+                ? `🏹 Der Jäger erschoss ${x.name} — ${x.roleName}.`
+                : `💔 ${x.name} — ${x.roleName} — stirbt ebenfalls.`;
+            lynchExtra.appendChild(line);
+        });
+        lynchClose.hidden = false;
+    }, 2300));
+}
+
+lynchClose.addEventListener('click', hideLynchReveal);
 
 // Jäger died at night: flip ONLY the Jäger's card first, then wait for hunter shot
 socket.on('morning-partial-reveal', ({ hunterDeath }) => {

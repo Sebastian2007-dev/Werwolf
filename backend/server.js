@@ -262,6 +262,7 @@ function pushCurrentGameState(code, room, socket) {
                 hint: entry.hint,
                 players: buildNightTargetsFor(room, g, entry, socket.id),
                 extra,
+                pack: wolfPackNamesFor(room, entry, socket.id),
             });
             // Wolfs-Abstimmung: aktuellen Stimmenstand (inkl. eigener Stimme) nachreichen
             if (entry.actionType === 'kill') broadcastWolfVotes(code, room, entry, g);
@@ -1346,6 +1347,13 @@ function startNight(code, room) {
     advanceNight(code, room);
 }
 
+// Namen der Rudel-Mitglieder (ohne den Empfänger) — wird den Werwölfen in
+// ihrer Nachtrunde mitgeteilt, damit sie wissen, wer zum Rudel gehört
+function wolfPackNamesFor(room, entry, pid) {
+    if (entry.actionType !== 'kill') return undefined;
+    return entry.playerIds.filter(id => id !== pid).map(id => playerName(room, id));
+}
+
 // Target list for a night-turn player — shared by advanceNight and reconnect push
 function buildNightTargetsFor(room, g, entry, pid) {
     const targets = room.players.filter(p =>
@@ -1402,6 +1410,7 @@ function advanceNight(code, room) {
             hint: entry.hint,
             players: buildNightTargetsFor(room, g, entry, pid),
             extra,
+            pack: wolfPackNamesFor(room, entry, pid),
         });
     });
 

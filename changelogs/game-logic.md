@@ -134,3 +134,8 @@
 - Wird ein Fakt erneut gelernt, bleibt die höchste Wichtigkeit erhalten (`memRemember`).
 - Umsetzung: Gedächtnis-Sets → Maps (`playerId → Wichtigkeit`); neuer Helper `replaceKeyInMap` hält Reconnect-IDs inkl. Wichtigkeit aktuell.
 - Verifiziert: Monte-Carlo-Test der Vergessenskurve (Stufe „Einfach", 3 Nächte: Wolfs-Sichtung überlebt zu 93 %, öffentliche Klärung zu 47 %) + voller Smoke-Test (Host + 7 Bots bis Spielende).
+
+## [2026-07-10 10:04] Werwölfe kennen ihr Rudel
+- `your-night-turn` enthält für die Wolfsrunde jetzt `pack`: die Namen aller Rudel-Mitglieder (ohne den Empfänger) — ab der 1. Werwolfrunde und auch nach einem Reconnect (`wolfPackNamesFor`, in advanceNight + pushCurrentGameState)
+- Verwandelte Wölfe (Wildes Kind, Jack, Hyde) sind automatisch enthalten, da die Liste aus den playerIds des Wolfszugs gebaut wird
+- Verifiziert per Socket-Test: Wolf-Client erhält die Rudel-Namen in jeder Wolfsrunde

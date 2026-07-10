@@ -160,3 +160,9 @@
 - Neue Host-Einstellung „Bot-Schlauheit" (Einfach/Normal/Schlau) im Lobby-Footer neben „Max. Anklagen" — synchronisiert über `set-bot-intelligence`/`room-updated`.
 - Bots zeigen in der Spielerliste ihre Persönlichkeit als kleinen Tag (aggressiv, zurückhaltend, Mitläufer, ausgewogen).
 - Neue Styles: `.bot-intel-select`, `.player-item__persona` (lobby.css).
+
+## [2026-07-10 10:04] Lynch-Animation + Rudel-Anzeige für Werwölfe
+- **Lynch-Animation:** Wird jemand vom Dorf eliminiert (oder stirbt die Zigeunerin durch Anklage), erscheint für ALLE Spieler ein Vollbild-Overlay: Name → Spannungspause mit baumelnder verdeckter Karte → Karten-Flip deckt die Rolle auf → Rollenname blendet ein (rot glühend bei Werwölfen); Folge-Tode (Liebespaar 💔, Jägerschuss 🏹) werden darunter gelistet. Ersetzt die leicht zu übersehende Textzeile nicht, ergänzt sie (Text bleibt im Tag-Panel)
+- Overlay schließt per „Weiter"-Knopf oder automatisch beim Phasenwechsel (Nacht/neuer Tag); neue Styles `.lynch-overlay` etc. in game.css
+- **Rudel-Anzeige:** Werwölfe sehen in ihrer Nachtrunde ein rotes Info-Band „🐺 Dein Rudel: …" (bzw. „Du bist der einzige Werwolf."), gespeist aus dem neuen `pack`-Feld
+- Cache-Version für game.css/game.js auf v=3 erhöht
