@@ -2124,8 +2124,46 @@ body.is-day .day-btn--confirm {
     margin: 0;
 }
 
-/* Narr überlebt den Lynch — Jubel-Variante der Kartenaufdeckung */
+/* Narr überlebt den Lynch — Spott-Nummer: tanzende Karte, Konfetti, Wackeltext */
 .lynch-box__role.is-narr {
     color: var(--accent);
     text-shadow: 0 0 26px rgba(200,170,110,0.55);
+    animation: narr-wiggle 0.7s ease-in-out infinite;
+}
+
+@keyframes narr-wiggle {
+    0%, 100% { transform: rotate(-1.5deg) translateY(0); }
+    50%      { transform: rotate(1.5deg)  translateY(-2px); }
+}
+
+/* Die aufgedeckte Narrenkarte tanzt, statt bedrohlich zu glühen */
+.lynch-overlay.is-narr-party .lynch-card {
+    animation: narr-dance 0.9s ease-in-out infinite;
+}
+@keyframes narr-dance {
+    0%, 100% { transform: rotate(-6deg) translateY(0); }
+    25%      { transform: rotate(0deg)  translateY(-10px); }
+    50%      { transform: rotate(6deg)  translateY(0); }
+    75%      { transform: rotate(0deg)  translateY(-10px); }
+}
+.lynch-overlay.is-narr-party .lynch-card__flip.is-revealed {
+    box-shadow: 0 10px 46px rgba(200,170,110,0.45);
+}
+.lynch-overlay.is-narr-party .lynch-box__eyebrow {
+    color: var(--accent);
+    letter-spacing: 0.24em;
+}
+
+/* Konfetti: fällt von oben durchs Bild und dreht sich dabei */
+.lynch-confetti {
+    position: fixed;
+    top: -2.5rem;
+    z-index: 1;
+    pointer-events: none;
+    animation: narr-confetti-fall linear forwards;
+}
+@keyframes narr-confetti-fall {
+    0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+    85%  { opacity: 1; }
+    100% { transform: translateY(110vh) rotate(360deg); opacity: 0; }
 }

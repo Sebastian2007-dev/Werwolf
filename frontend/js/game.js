@@ -883,8 +883,33 @@ function showDayWaitResult(skipped, eliminated, hunterShot, narrSurvived, alsoDi
 function hideLynchReveal() {
     lynchTimers.forEach(clearTimeout);
     lynchTimers = [];
+    lynchOverlay.classList.remove('is-narr-party');
+    lynchOverlay.querySelectorAll('.lynch-confetti').forEach(el => el.remove());
     lynchOverlay.hidden = true;
 }
+
+// Konfetti-Regen für die Narren-Nummer
+function startNarrConfetti() {
+    const symbols = ['🃏', '🎉', '🎊', '🤡', '✨', '🎭'];
+    for (let i = 0; i < 28; i++) {
+        const s = document.createElement('span');
+        s.className = 'lynch-confetti';
+        s.textContent = symbols[Math.floor(Math.random() * symbols.length)];
+        s.style.left              = Math.random() * 100 + 'vw';
+        s.style.animationDuration = (2.5 + Math.random() * 2.5) + 's';
+        s.style.animationDelay    = (Math.random() * 1.5) + 's';
+        s.style.fontSize          = (0.9 + Math.random() * 1.5) + 'rem';
+        lynchOverlay.appendChild(s);
+        lynchTimers.push(setTimeout(() => s.remove(), 7000));
+    }
+}
+
+const NARR_TAUNTS = [
+    '🤡 Reingefallen! Der Narr lässt sich nicht lynchen!',
+    '🃏 Netter Versuch — Narrenfreiheit!',
+    '🎭 Der Narr verbeugt sich… und lebt weiter!',
+    '🤡 Das Dorf lyncht… Luft! Der Narr lacht sich schlapp.',
+];
 
 function showLynchReveal(death, extras = [], byAccusation = false, opts = {}) {
     hideLynchReveal();
@@ -914,8 +939,12 @@ function showLynchReveal(death, extras = [], byAccusation = false, opts = {}) {
     }, 1200));
     lynchTimers.push(setTimeout(() => {
         if (opts.narr) {
-            lynchRole.textContent = '🃏 Der Narr überlebt — Narrenfreiheit!';
+            // Spott-Nummer: tanzende Karte, Konfetti und ein frecher Spruch
+            lynchEyebrow.textContent = '🎭 Narri, Narro!';
+            lynchRole.textContent = NARR_TAUNTS[Math.floor(Math.random() * NARR_TAUNTS.length)];
             lynchRole.classList.add('is-shown', 'is-narr');
+            lynchOverlay.classList.add('is-narr-party');
+            startNarrConfetti();
         } else {
             lynchRole.textContent = death.roleName;
             lynchRole.classList.add('is-shown');

@@ -184,3 +184,7 @@
 - **Lobby-Fußleiste:** bricht bei schmalen Fenstern um (`flex-wrap`), statt den Start-Knopf abzuschneiden
 - **Draggable überall:** `makeDraggable` in eigenes Modul `draggable.js` ausgelagert; Voice-Leiste und Chat-Knopf sind jetzt auch in der **Lobby** verschiebbar (gleiche gespeicherte Position wie im Spiel)
 - Cache-Versionen auf ?v=4
+
+## [2026-07-10 13:33] Narr-Lynch als Spott-Nummer
+- Wird der Narr gelyncht, gibt es statt der düsteren Aufdeckung eine alberne Show: Eyebrow wechselt zu „🎭 Narri, Narro!", die aufgedeckte Narrenkarte tanzt (narr-dance), Konfetti (🃏🎉🤡✨🎭) regnet durchs Bild und einer von vier frechen Sprüchen wackelt unter der Karte (z. B. „Das Dorf lyncht… Luft! Der Narr lacht sich schlapp.")
+- Aufräumen beim Schließen/Phasenwechsel entfernt Konfetti und Party-Klasse; game.css/js auf ?v=5
