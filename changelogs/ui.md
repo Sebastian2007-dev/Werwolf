@@ -178,3 +178,9 @@
 - **Bildschutz:** Kontextmenü/Langdruck/Drag auf allen Kartenbildern unterbunden (app.css + contextmenu-Handler) — die handgemalten Karten sollen nicht einfach kopierbar sein
 - **Changelog & Version auf der Startseite:** Versions-Knopf im Footer (aus `changelog-data.js`, aktuell v1.1.0) öffnet „Was ist neu?"-Modal mit spielerfreundlichen Release-Notes
 - Cache-Versionen aller CSS/JS-Referenzen auf ?v=3 erhöht
+
+## [2026-07-10 13:10] Stimmen-Panel oben verankert, Lobby-Footer responsiv, Voice auch in der Lobby verschiebbar
+- **Stimmen-Panel:** aus der unteren Tages-Leiste herausgelöst — jetzt ein eigenes fixes Panel oben rechts, das nach unten wächst und intern scrollt (`max-height` passt sich der Fensterhöhe an). Die untere Leiste bläht sich nicht mehr auf und versteckt keine Knöpfe mehr
+- **Lobby-Fußleiste:** bricht bei schmalen Fenstern um (`flex-wrap`), statt den Start-Knopf abzuschneiden
+- **Draggable überall:** `makeDraggable` in eigenes Modul `draggable.js` ausgelagert; Voice-Leiste und Chat-Knopf sind jetzt auch in der **Lobby** verschiebbar (gleiche gespeicherte Position wie im Spiel)
+- Cache-Versionen auf ?v=4

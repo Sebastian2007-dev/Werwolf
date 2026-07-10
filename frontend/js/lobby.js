@@ -1,6 +1,7 @@
 import { ROLES, DESCRIPTIONS } from '/js/roles.js';
 import { initVoice } from '/js/voice.js';
 import { initTutorial } from '/js/tutorial.js';
+import { makeDraggable } from '/js/draggable.js';
 
 // ── URL params ────────────────────────────────────────────────────────────────
 const params      = new URLSearchParams(window.location.search);
@@ -564,3 +565,7 @@ function h(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
 }
+
+// Voice-Leiste und Chat-Knopf frei verschiebbar (gleiche Position wie im Spiel)
+makeDraggable(document.getElementById('voice-bar'),   'ww_pos_voice');
+makeDraggable(document.getElementById('chat-toggle'), 'ww_pos_chat');

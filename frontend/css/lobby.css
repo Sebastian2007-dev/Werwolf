@@ -454,9 +454,10 @@ body {
     padding: 0.75rem 1.5rem;
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
     display: flex;
+    flex-wrap: wrap; /* schmale Fenster: umbrechen statt Knöpfe abschneiden */
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 0.5rem 1rem;
     flex-shrink: 0;
     position: relative;
     z-index: 1;
@@ -468,7 +469,7 @@ body {
     flex: 1;
 }
 
-.lobby-footer__actions { display: flex; align-items: center; gap: 0.75rem; }
+.lobby-footer__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem 0.75rem; margin-left: auto; }
 
 /* Narrator mode toggle */
 .narrator-toggle[hidden] { display: none; }

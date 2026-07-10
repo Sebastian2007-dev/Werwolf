@@ -9,10 +9,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
-    <link rel="stylesheet" href="/css/app.css?v=3">
-    <link rel="stylesheet" href="/css/game.css?v=3">
-    <link rel="stylesheet" href="/css/voice.css?v=3">
-    <link rel="stylesheet" href="/css/tutorial.css?v=3">
+    <link rel="stylesheet" href="/css/app.css?v=4">
+    <link rel="stylesheet" href="/css/game.css?v=4">
+    <link rel="stylesheet" href="/css/voice.css?v=4">
+    <link rel="stylesheet" href="/css/tutorial.css?v=4">
 </head>
 <body>
 
@@ -144,12 +144,13 @@
             <p class="day-panel__wait-text" id="day-wait-text">Warte auf andere Spieler&hellip;</p>
         </div>
 
-        <!-- Live-Liste: wer klagt wen an / wer stimmt für wen -->
-        <div class="day-live-votes" id="day-live-votes" hidden>
-            <p class="day-live-votes__label" id="day-live-votes-label"></p>
-            <ul class="day-live-votes__list" id="day-live-votes-list"></ul>
-        </div>
+    </div>
 
+    <!-- Live-Liste: wer klagt wen an / wer stimmt für wen — eigenes Panel oben
+         rechts, scrollt nach unten und lässt die untere Leiste unangetastet -->
+    <div class="day-live-votes" id="day-live-votes" hidden>
+        <p class="day-live-votes__label" id="day-live-votes-label"></p>
+        <ul class="day-live-votes__list" id="day-live-votes-list"></ul>
     </div>
 
     <!-- Morning reveal overlay: shown during night-summary phase -->
@@ -378,6 +379,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/game.js?v=3" type="module"></script>
+    <script src="/js/game.js?v=4" type="module"></script>
 </body>
 </html>
