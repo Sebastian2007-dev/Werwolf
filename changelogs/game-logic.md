@@ -127,3 +127,10 @@
 - **Anklage/Abstimmung:** bekannte Werwölfe werden zielsicher angeklagt/gewählt; Partner, Rudel (bei Wolf-Bots) und Geklärte werden verschont; Mitläufer folgen der Menge.
 - **Jäger:** schießt auf den Verdächtigsten statt blind — nie auf den eigenen Partner.
 - Zufallsrauschen in allen Bewertungen hält Bots unberechenbar; per Smoke-Test (Host + 7 Bots, volles Spiel bis Wolfssieg) verifiziert.
+
+## [2026-07-10 09:45] Bot-Gedächtnis: Wichtigkeitsgrad pro Erinnerung
+- Jeder gemerkte Fakt trägt jetzt eine Wichtigkeit (0..1); die nächtliche Vergessen-Chance skaliert mit `forgetChance * (1 - Wichtigkeit)` — je wichtiger, desto unwahrscheinlicher wird vergessen (`MEM_IMPORTANCE`).
+- Stufen: Seherin enttarnt Werwolf **0.95** (brennt sich ein), Seherin sieht Unschuldigen / Hexe kennt Wolfsopfer **0.75**, „schon angesehen" **0.6**, öffentlich Geklärte (Heilung, Silberschmied) **0.5**; Verdachtspunkte („X klagte Y an") bleiben die unwichtigste Stufe und verblassen wie bisher am schnellsten.
+- Wird ein Fakt erneut gelernt, bleibt die höchste Wichtigkeit erhalten (`memRemember`).
+- Umsetzung: Gedächtnis-Sets → Maps (`playerId → Wichtigkeit`); neuer Helper `replaceKeyInMap` hält Reconnect-IDs inkl. Wichtigkeit aktuell.
+- Verifiziert: Monte-Carlo-Test der Vergessenskurve (Stufe „Einfach", 3 Nächte: Wolfs-Sichtung überlebt zu 93 %, öffentliche Klärung zu 47 %) + voller Smoke-Test (Host + 7 Bots bis Spielende).

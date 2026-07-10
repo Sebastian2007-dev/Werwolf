@@ -117,6 +117,12 @@ function replaceObjectKey(obj, oldId, newId) {
     delete obj[oldId];
 }
 
+function replaceKeyInMap(map, oldId, newId) {
+    if (!map?.has(oldId)) return;
+    map.set(newId, map.get(oldId));
+    map.delete(oldId);
+}
+
 function replacePlayerSocket(room, oldId, newId) {
     const player = room.players.find(p => p.id === oldId);
     if (!player) return false;
@@ -172,9 +178,9 @@ function replacePlayerSocket(room, oldId, newId) {
 
         // Bot-Gedächtnisse verweisen auf Spieler-IDs — bei Reconnects nachziehen
         for (const m of Object.values(g.botMemory ?? {})) {
-            replaceIdInSet(m.knownWolves, oldId, newId);
-            replaceIdInSet(m.cleared, oldId, newId);
-            replaceIdInSet(m.seen, oldId, newId);
+            replaceKeyInMap(m.knownWolves, oldId, newId);
+            replaceKeyInMap(m.cleared, oldId, newId);
+            replaceKeyInMap(m.seen, oldId, newId);
             replaceObjectKey(m.suspicion, oldId, newId);
         }
     }
@@ -534,29 +540,44 @@ function pickRandom(arr) { return arr.length ? arr[Math.floor(Math.random() * ar
 // Jeder Bot merkt sich Fakten wie ein menschlicher Spieler: sichere Werwölfe,
 // geklärte Unschuldige, bereits angesehene Spieler (Seherin) und einen
 // Verdachtszähler. Nächtliches Vergessen macht das Ganze menschlich-fehlbar.
+// Jeder Fakt trägt eine Wichtigkeit (0..1): je wichtiger, desto unwahrschein-
+// licher wird er vergessen (Vergessen-Chance = forgetChance * (1 - Wichtigkeit)).
+
+const MEM_IMPORTANCE = {
+    seerWolf:      0.95, // Seherin enttarnt einen Werwolf — brennt sich ein
+    seerCleared:   0.75, // Seherin sieht einen Unschuldigen
+    witchVictim:   0.75, // Hexe kennt das Wolfsopfer → geklärt (Privatwissen)
+    seerSeen:      0.6,  // "den habe ich schon angesehen"
+    publicCleared: 0.5,  // öffentlich geklärt (Heilung, Silberschmied)
+};
 
 function botMemoryOf(g, botId) {
     if (!g.botMemory) g.botMemory = {};
     if (!g.botMemory[botId]) {
         g.botMemory[botId] = {
-            knownWolves: new Set(),  // sicher Werwolf
-            cleared:     new Set(),  // sicher kein Werwolf
-            seen:        new Set(),  // von der Seherin bereits angesehen
-            suspicion:   {},         // playerId -> Verdachtspunkte
+            knownWolves: new Map(),  // playerId -> Wichtigkeit: sicher Werwolf
+            cleared:     new Map(),  // playerId -> Wichtigkeit: sicher kein Werwolf
+            seen:        new Map(),  // playerId -> Wichtigkeit: Seherin hat angesehen
+            suspicion:   {},         // playerId -> Verdachtspunkte (unwichtigste Stufe)
         };
     }
     return g.botMemory[botId];
 }
 
-function memLearnWolf(g, botId, targetId) {
+// Merkt sich einen Fakt; wird er erneut gelernt, bleibt die höchste Wichtigkeit
+function memRemember(map, targetId, importance) {
+    map.set(targetId, Math.max(importance, map.get(targetId) ?? 0));
+}
+
+function memLearnWolf(g, botId, targetId, importance = MEM_IMPORTANCE.seerWolf) {
     const m = botMemoryOf(g, botId);
-    m.knownWolves.add(targetId);
+    memRemember(m.knownWolves, targetId, importance);
     m.cleared.delete(targetId);
 }
 
-function memLearnCleared(g, botId, targetId) {
+function memLearnCleared(g, botId, targetId, importance = MEM_IMPORTANCE.publicCleared) {
     const m = botMemoryOf(g, botId);
-    if (!m.knownWolves.has(targetId)) m.cleared.add(targetId);
+    if (!m.knownWolves.has(targetId)) memRemember(m.cleared, targetId, importance);
 }
 
 function memSuspect(g, botId, targetId, points) {
@@ -575,15 +596,17 @@ function memBroadcastSuspect(room, g, targetId, points) {
         .forEach(p => memSuspect(g, p.id, targetId, points));
 }
 
-// Nächtliches Vergessen: je nach Schlauheitsgrad gehen Fakten wieder verloren
+// Nächtliches Vergessen: je nach Schlauheitsgrad gehen Fakten wieder verloren —
+// wichtige Fakten (z. B. "Seherin sah einen Werwolf") deutlich seltener
 function botMemoryNightlyForget(room, g) {
     const { forgetChance } = botIntel(room);
     for (const m of Object.values(g.botMemory ?? {})) {
-        for (const set of [m.knownWolves, m.cleared, m.seen]) {
-            for (const id of [...set]) {
-                if (Math.random() < forgetChance) set.delete(id);
+        for (const map of [m.knownWolves, m.cleared, m.seen]) {
+            for (const [id, importance] of [...map]) {
+                if (Math.random() < forgetChance * (1 - importance)) map.delete(id);
             }
         }
+        // Verdacht ("X klagte Y an") ist die unwichtigste Stufe: verblasst immer
         for (const [id, v] of Object.entries(m.suspicion)) {
             const decayed = v * (Math.random() < forgetChance ? 0.4 : 0.85);
             if (decayed < 0.3) delete m.suspicion[id];
@@ -682,7 +705,7 @@ function botNightPayload(room, g, entry, botId) {
     if (entry.actionType === 'witch') {
         // Die Hexe sieht dasselbe Opfer wie ein menschlicher Spieler
         const victim = buildWitchExtra(room, g).victim?.id ?? null;
-        if (victim) memLearnCleared(g, botId, victim); // Wolfsopfer ist kein Wolf
+        if (victim) memLearnCleared(g, botId, victim, MEM_IMPORTANCE.witchVictim); // Wolfsopfer ist kein Wolf
 
         // Sich selbst oder den Partner rettet die Hexe immer
         if (victim && !g.hexeUsedHeal && (victim === botId || bonded.has(victim))) return { heal: true };
@@ -1485,9 +1508,9 @@ function processNightAction(code, room, entry, actorId, payload) {
         g.nightLog.push(`Seherin sah: ${tname} = ${trole}`);
         // Seherin-Bot merkt sich das Ergebnis wie ein menschlicher Spieler
         if (isBotPlayer(room, actorId)) {
-            botMemoryOf(g, actorId).seen.add(payload.targetId);
-            if (WOLF_IDS.has(room.assignments[payload.targetId])) memLearnWolf(g, actorId, payload.targetId);
-            else memLearnCleared(g, actorId, payload.targetId);
+            memRemember(botMemoryOf(g, actorId).seen, payload.targetId, MEM_IMPORTANCE.seerSeen);
+            if (WOLF_IDS.has(room.assignments[payload.targetId])) memLearnWolf(g, actorId, payload.targetId, MEM_IMPORTANCE.seerWolf);
+            else memLearnCleared(g, actorId, payload.targetId, MEM_IMPORTANCE.seerCleared);
         }
 
     } else if (entry.actionType === 'witch') {
