@@ -153,6 +153,14 @@ function replacePlayerSocket(room, oldId, newId) {
         }
 
         g.nightQueue?.forEach(entry => replaceIdInArray(entry.playerIds, oldId, newId));
+
+        // Bot-Gedächtnisse verweisen auf Spieler-IDs — bei Reconnects nachziehen
+        for (const m of Object.values(g.botMemory ?? {})) {
+            replaceIdInSet(m.knownWolves, oldId, newId);
+            replaceIdInSet(m.cleared, oldId, newId);
+            replaceIdInSet(m.seen, oldId, newId);
+            replaceObjectKey(m.suspicion, oldId, newId);
+        }
     }
 
     return true;
@@ -263,6 +271,7 @@ function broadcast(roomCode) {
         messages:           room.messages.slice(-80),
         narratorMode:       room.narratorMode,
         maxAccusations:     room.maxAccusations ?? 3,
+        botIntelligence:    room.botIntelligence ?? 2,
         designatedNarrator: room.designatedNarrator ?? null,
     });
 }
@@ -298,6 +307,39 @@ const BOT_NAMES = [
 ];
 let botIdCounter = 0;
 
+// Schlauheitsgrad (vom Host einstellbar): useChance = wie zuverlässig ein Bot
+// sein Wissen anwendet, forgetChance = nächtliche Chance pro Fakt, ihn zu vergessen
+const BOT_INTELLIGENCE = {
+    1: { label: 'Einfach', useChance: 0.15, forgetChance: 0.45 },
+    2: { label: 'Normal',  useChance: 0.65, forgetChance: 0.20 },
+    3: { label: 'Schlau',  useChance: 0.92, forgetChance: 0.05 },
+};
+
+// Persönlichkeiten: nominateChance = wie gerne der Bot anklagt, abilityChance =
+// wie schnell er riskante Fähigkeiten (Gift, Verhaftung, Glocken) einsetzt,
+// betrayChance = Chance, dass Magd/Wildes Kind den Herrn/das Idol absichtlich
+// opfern, um dessen Rolle zu erben, followCrowd = wie stark er der Masse folgt
+const BOT_PERSONALITIES = {
+    aggressiv:      { label: 'aggressiv',      nominateChance: 0.85, abilityChance: 0.35, betrayChance: 0.35, followCrowd: 0.2 },
+    zurueckhaltend: { label: 'zurückhaltend',  nominateChance: 0.30, abilityChance: 0.05, betrayChance: 0,    followCrowd: 0.3 },
+    mitlaeufer:     { label: 'Mitläufer',      nominateChance: 0.55, abilityChance: 0.10, betrayChance: 0.05, followCrowd: 0.9 },
+    ausgewogen:     { label: 'ausgewogen',     nominateChance: 0.60, abilityChance: 0.15, betrayChance: 0.10, followCrowd: 0.5 },
+};
+
+function botIntel(room) {
+    return BOT_INTELLIGENCE[room.botIntelligence] ?? BOT_INTELLIGENCE[2];
+}
+
+function botPersona(room, id) {
+    const key = room.players.find(p => p.id === id)?.personality;
+    return BOT_PERSONALITIES[key] ?? BOT_PERSONALITIES.ausgewogen;
+}
+
+// Wendet der Bot in diesem Moment sein Wissen an? (abhängig vom Schlauheitsgrad)
+function botActsSmart(room) {
+    return Math.random() < botIntel(room).useChance;
+}
+
 function isBotPlayer(room, id) {
     return !!room.players.find(p => p.id === id)?.isBot;
 }
@@ -311,6 +353,7 @@ function createBot(room) {
         id: `bot_${botIdCounter}_${Date.now().toString(36)}`,
         name: `🤖 ${base}`,
         isHost: false, isReady: true, isBot: true, requestedCard: null,
+        personality: pickRandom(Object.keys(BOT_PERSONALITIES)),
     };
 }
 
@@ -328,30 +371,192 @@ function botDelay() { return 1500 + Math.random() * 3000; }
 
 function pickRandom(arr) { return arr.length ? arr[Math.floor(Math.random() * arr.length)] : null; }
 
-// Entscheidet, was ein Bot in seiner Nachtrunde tut (einfache Zufalls-Heuristiken)
+// ── Bot-Gedächtnis ────────────────────────────────────────────────────────────
+// Jeder Bot merkt sich Fakten wie ein menschlicher Spieler: sichere Werwölfe,
+// geklärte Unschuldige, bereits angesehene Spieler (Seherin) und einen
+// Verdachtszähler. Nächtliches Vergessen macht das Ganze menschlich-fehlbar.
+
+function botMemoryOf(g, botId) {
+    if (!g.botMemory) g.botMemory = {};
+    if (!g.botMemory[botId]) {
+        g.botMemory[botId] = {
+            knownWolves: new Set(),  // sicher Werwolf
+            cleared:     new Set(),  // sicher kein Werwolf
+            seen:        new Set(),  // von der Seherin bereits angesehen
+            suspicion:   {},         // playerId -> Verdachtspunkte
+        };
+    }
+    return g.botMemory[botId];
+}
+
+function memLearnWolf(g, botId, targetId) {
+    const m = botMemoryOf(g, botId);
+    m.knownWolves.add(targetId);
+    m.cleared.delete(targetId);
+}
+
+function memLearnCleared(g, botId, targetId) {
+    const m = botMemoryOf(g, botId);
+    if (!m.knownWolves.has(targetId)) m.cleared.add(targetId);
+}
+
+function memSuspect(g, botId, targetId, points) {
+    const m = botMemoryOf(g, botId);
+    m.suspicion[targetId] = (m.suspicion[targetId] ?? 0) + points;
+}
+
+// Öffentliche Information: alle lebenden Bots lernen sie gleichzeitig
+function memBroadcastCleared(room, g, targetId) {
+    room.players.filter(p => p.isBot && g.alive.has(p.id) && p.id !== targetId)
+        .forEach(p => memLearnCleared(g, p.id, targetId));
+}
+
+function memBroadcastSuspect(room, g, targetId, points) {
+    room.players.filter(p => p.isBot && g.alive.has(p.id) && p.id !== targetId)
+        .forEach(p => memSuspect(g, p.id, targetId, points));
+}
+
+// Nächtliches Vergessen: je nach Schlauheitsgrad gehen Fakten wieder verloren
+function botMemoryNightlyForget(room, g) {
+    const { forgetChance } = botIntel(room);
+    for (const m of Object.values(g.botMemory ?? {})) {
+        for (const set of [m.knownWolves, m.cleared, m.seen]) {
+            for (const id of [...set]) {
+                if (Math.random() < forgetChance) set.delete(id);
+            }
+        }
+        for (const [id, v] of Object.entries(m.suspicion)) {
+            const decayed = v * (Math.random() < forgetChance ? 0.4 : 0.85);
+            if (decayed < 0.3) delete m.suspicion[id];
+            else m.suspicion[id] = decayed;
+        }
+    }
+}
+
+// Spieler, die dieser Bot niemals angreift: Liebespartner und Katz/Maus-Partner
+// (dieses Wissen vergisst auch ein Bot nie)
+function botBondedIds(room, g, botId) {
+    const bonded = new Set();
+    if (g.lovers?.includes(botId)) bonded.add(g.lovers.find(id => id !== botId));
+    const rid = room.assignments[botId];
+    if (rid === 'Katze') { const m = findPlayerByRole(room, 'Maus');  if (m) bonded.add(m); }
+    if (rid === 'Maus')  { const k = findPlayerByRole(room, 'Katze'); if (k) bonded.add(k); }
+    return bonded;
+}
+
+// Herr (Magd) bzw. Idol (Wildes Kind): wird normalerweise geschont — außer der
+// Bot opfert ihn absichtlich, um die Rolle zu erben (Persönlichkeitsstrategie)
+function botMasterId(room, g, botId) {
+    const rid = room.assignments[botId];
+    if (rid === 'ErgebeneMagd' && g.magd_herr && g.alive.has(g.magd_herr)) return g.magd_herr;
+    if (rid === 'WildesKind' && g.wildesKind_idol && !g.wildesKind_isWolf && g.alive.has(g.wildesKind_idol)) return g.wildesKind_idol;
+    return null;
+}
+
+// Wählt ein Angriffsziel: bekannte Wölfe zuerst, dann höchster Verdacht;
+// Geklärte werden gemieden. Das Zufallsrauschen hält Bots unberechenbar.
+function botPickSuspect(g, botId, candidateIds) {
+    if (!candidateIds.length) return null;
+    const m = botMemoryOf(g, botId);
+    const wolves = candidateIds.filter(id => m.knownWolves.has(id));
+    if (wolves.length) return pickRandom(wolves);
+    const unclear = candidateIds.filter(id => !m.cleared.has(id));
+    const pool = unclear.length ? unclear : candidateIds;
+    let best = null, bestScore = -Infinity;
+    for (const id of pool) {
+        const score = (m.suspicion[id] ?? 0) + Math.random();
+        if (score > bestScore) { bestScore = score; best = id; }
+    }
+    return best;
+}
+
+// Wählt ein Schutz-/Vertrauensziel: möglichst unverdächtig, gerne geklärt
+function botPickTrusted(g, botId, candidateIds) {
+    if (!candidateIds.length) return null;
+    const m = botMemoryOf(g, botId);
+    const safe = candidateIds.filter(id => !m.knownWolves.has(id));
+    const pool = safe.length ? safe : candidateIds;
+    let best = null, bestScore = Infinity;
+    for (const id of pool) {
+        const score = (m.suspicion[id] ?? 0) - (m.cleared.has(id) ? 1 : 0) + Math.random();
+        if (score < bestScore) { bestScore = score; best = id; }
+    }
+    return best;
+}
+
+// Entscheidet, was ein Bot in seiner Nachtrunde tut — mit Gedächtnis,
+// Persönlichkeit und einstellbarem Schlauheitsgrad statt purem Zufall
 function botNightPayload(room, g, entry, botId) {
     const targets = buildNightTargetsFor(room, g, entry, botId);
-    const pickId  = () => pickRandom(targets)?.id ?? null;
+    const ids     = targets.map(t => t.id);
+    const persona = botPersona(room, botId);
+    const mem     = botMemoryOf(g, botId);
+    const bonded  = botBondedIds(room, g, botId);
+    const pickId  = () => pickRandom(ids) ?? null;
 
-    if (entry.group === 'Glöckner') return Math.random() < 0.2 ? { targetId: '__ring__' } : {};
+    if (entry.group === 'Glöckner') return Math.random() < persona.abilityChance ? { targetId: '__ring__' } : {};
     if (entry.group === 'Dieb')     return Math.random() < 0.5 ? { targetId: pickRandom(g.diebOptions ?? []) } : {};
-    if (entry.group === 'Gendarm')  return Math.random() < 0.15 ? { targetId: pickId() } : {};
+
+    if (entry.group === 'Gendarm') {
+        // Verhaften ist riskant: bei einem Unschuldigen stirbt der Gendarm mit.
+        const candidates = ids.filter(id => !bonded.has(id));
+        if (botActsSmart(room)) {
+            const knownWolf = candidates.find(id => mem.knownWolves.has(id));
+            if (knownWolf && Math.random() < 0.8) return { targetId: knownWolf };
+            return {}; // kein sicheres Ziel → lieber warten
+        }
+        return Math.random() < persona.abilityChance * 0.4 ? { targetId: pickRandom(candidates) } : {};
+    }
+
+    if (entry.actionType === 'view') {
+        // Seherin: niemanden doppelt ansehen, Verdächtige zuerst
+        let pool = ids.filter(id => !mem.seen.has(id));
+        if (botActsSmart(room)) {
+            const uninformative = id => mem.cleared.has(id) || mem.knownWolves.has(id) || bonded.has(id);
+            const fresh = pool.filter(id => !uninformative(id));
+            if (fresh.length) pool = fresh;
+        }
+        if (!pool.length) pool = ids;
+        return { targetId: botPickSuspect(g, botId, pool) };
+    }
+
+    if (entry.actionType === 'witch') {
+        // Die Hexe sieht dasselbe Opfer wie ein menschlicher Spieler
+        const victim = buildWitchExtra(room, g).victim?.id ?? null;
+        if (victim) memLearnCleared(g, botId, victim); // Wolfsopfer ist kein Wolf
+
+        // Sich selbst oder den Partner rettet die Hexe immer
+        if (victim && !g.hexeUsedHeal && (victim === botId || bonded.has(victim))) return { heal: true };
+        if (victim && !g.hexeUsedHeal) {
+            const healChance = (botActsSmart(room) && mem.cleared.has(victim) ? 0.4 : 0.3) + persona.abilityChance;
+            if (Math.random() < healChance) return { heal: true };
+        }
+        if (!g.hexeUsedPoison && Math.random() < persona.abilityChance) {
+            let pool = ids.filter(id => id !== victim && !bonded.has(id));
+            if (botActsSmart(room)) {
+                const wolf = pool.find(id => mem.knownWolves.has(id));
+                if (wolf) return { poisonTargetId: wolf };
+                pool = pool.filter(id => !mem.cleared.has(id));
+            }
+            const tid = botPickSuspect(g, botId, pool);
+            if (tid) return { poisonTargetId: tid };
+        }
+        return {};
+    }
 
     switch (entry.actionType) {
         case 'select-two': {
-            const ids = shuffle(targets.map(t => t.id)).slice(0, 2);
-            return ids.length === 2 ? { targets: ids } : {};
+            const two = shuffle(ids).slice(0, 2);
+            return two.length === 2 ? { targets: two } : {};
         }
-        case 'witch': {
-            if (g.nightVictim && !g.hexeUsedHeal && Math.random() < 0.5) return { heal: true };
-            if (!g.hexeUsedPoison && Math.random() < 0.15) {
-                const tid = pickId();
-                if (tid) return { poisonTargetId: tid };
+        default: {
+            // Schutz-/Bindungsrollen suchen sich vertrauenswürdige Ziele
+            const protective = ['Dorfmatratze', 'Silberschmied', 'Ergebene Magd', 'Wildes Kind', 'Händler'].includes(entry.group);
+            if (protective && botActsSmart(room)) {
+                return { targetId: botPickTrusted(g, botId, ids.filter(id => !bonded.has(id))) ?? pickId() };
             }
-            return {};
-        }
-        default:
             return { targetId: pickId() };
+        }
     }
 }
 
@@ -412,7 +617,8 @@ function scheduleBotWolfSync(code, room, entry) {
     });
 }
 
-// Bots klagen nach kurzer "Bedenkzeit" an oder überspringen die Runde
+// Bots klagen nach kurzer "Bedenkzeit" an oder überspringen die Runde —
+// Persönlichkeit bestimmt die Anklagefreude, das Gedächtnis das Ziel
 function scheduleBotNominations(code, room) {
     const g = room.game;
     if (!g) return;
@@ -422,18 +628,52 @@ function scheduleBotNominations(code, room) {
         addBotTimer(g, () => {
             if (room.game !== g || g.phase !== 'day-accusation') return;
             if (g.dayNominations[bot.id] !== undefined) return;
-            // Werwolf-Bots klagen keine Rudelmitglieder an
-            const candidates = [...g.alive].filter(id =>
+
+            const persona = botPersona(room, bot.id);
+            const mem     = botMemoryOf(g, bot.id);
+            const bonded  = botBondedIds(room, g, bot.id);
+            const master  = botMasterId(room, g, bot.id);
+            const betray  = master && Math.random() < persona.betrayChance;
+
+            // Werwolf-Bots klagen keine Rudelmitglieder an, niemand seinen Partner
+            let candidates = [...g.alive].filter(id =>
                 id !== bot.id &&
                 id !== g.haendler_away &&
+                !bonded.has(id) &&
                 !(isWolf(room, bot.id) && isWolf(room, id)));
-            const target = Math.random() < 0.6 ? pickRandom(candidates) : null;
+            // Herr/Idol wird geschont — außer der Bot will die Rolle absichtlich erben
+            if (master && !betray) candidates = candidates.filter(id => id !== master);
+
+            let target = null;
+            if (betray && candidates.includes(master)) {
+                target = master;
+            } else if (botActsSmart(room)) {
+                const knownWolf = candidates.find(id => mem.knownWolves.has(id));
+                if (knownWolf && !isWolf(room, bot.id)) {
+                    target = knownWolf; // sicheres Wissen → immer anklagen
+                } else if (Math.random() < persona.nominateChance) {
+                    let pool = candidates.filter(id => !mem.cleared.has(id));
+                    if (!pool.length) pool = candidates;
+                    // Mitläufer springen auf bereits laufende Anklagen auf
+                    const tally = {};
+                    for (const nid of Object.values(g.dayNominations)) {
+                        if (nid) tally[nid] = (tally[nid] ?? 0) + 1;
+                    }
+                    const crowd = pool.filter(id => tally[id]);
+                    target = (crowd.length && Math.random() < persona.followCrowd)
+                        ? pickRandom(crowd)
+                        : botPickSuspect(g, bot.id, pool);
+                }
+            } else if (Math.random() < persona.nominateChance) {
+                target = pickRandom(candidates);
+            }
             castDayNomination(code, room, bot.id, target);
         }, 2000 + Math.random() * 6000);
     });
 }
 
-// Bots stimmen über die Angeklagten ab (Werwolf-Bots schonen das Rudel)
+// Bots stimmen über die Angeklagten ab (Werwolf-Bots schonen das Rudel,
+// niemand stimmt gegen den eigenen Partner)
 function scheduleBotDayVotes(code, room) {
     const g = room.game;
     if (!g) return;
@@ -444,19 +684,42 @@ function scheduleBotDayVotes(code, room) {
         addBotTimer(g, () => {
             if (room.game !== g || g.phase !== 'day-voting') return;
             if (g.dayVotes[bot.id] !== undefined) return;
+
+            const persona = botPersona(room, bot.id);
+            const mem     = botMemoryOf(g, bot.id);
+            const bonded  = botBondedIds(room, g, bot.id);
+
             let options = g.dayAccused.filter(id => id !== bot.id && g.alive.has(id));
+            const noBond = options.filter(id => !bonded.has(id));
+            if (noBond.length) options = noBond;
             if (isWolf(room, bot.id)) {
                 const nonWolf = options.filter(id => !isWolf(room, id));
                 if (nonWolf.length) options = nonWolf;
             }
             if (!options.length) options = g.dayAccused.filter(id => g.alive.has(id));
-            const target = pickRandom(options);
+
+            let target = null;
+            if (botActsSmart(room)) {
+                target = options.find(id => mem.knownWolves.has(id)) ?? null;
+                if (!target) {
+                    const unclear = options.filter(id => !mem.cleared.has(id));
+                    if (unclear.length) options = unclear;
+                }
+            }
+            if (!target && Math.random() < persona.followCrowd) {
+                // Mitläufer: stimmt für den aktuell Führenden
+                const counts = {};
+                for (const vid of Object.values(g.dayVotes)) counts[vid] = (counts[vid] ?? 0) + 1;
+                target = options.filter(id => counts[id]).sort((a, b) => counts[b] - counts[a])[0] ?? null;
+            }
+            if (!target) target = botPickSuspect(g, bot.id, options);
             if (target) castDayVote(code, room, bot.id, target);
         }, 2000 + Math.random() * 5000);
     });
 }
 
-// Bot-Jäger schießt nach kurzer Pause auf ein zufälliges Ziel
+// Bot-Jäger schießt nach kurzer Pause — auf Verdächtige statt blind,
+// und niemals auf den eigenen Partner
 function scheduleBotHunterShot(code, room) {
     const g = room.game;
     const jaegerId = findPlayerByRole(room, 'Jaeger');
@@ -465,7 +728,13 @@ function scheduleBotHunterShot(code, room) {
     const phase = g.phase;
     addBotTimer(g, () => {
         if (room.game !== g || g.phase !== phase) return;
-        const target = pickRandom(hunterShootTargets(room, g))?.id ?? null;
+        const bonded  = botBondedIds(room, g, jaegerId);
+        const targets = hunterShootTargets(room, g).map(t => t.id);
+        let pool = targets.filter(id => !bonded.has(id));
+        if (!pool.length) pool = targets;
+        const target = botActsSmart(room)
+            ? botPickSuspect(g, jaegerId, pool)
+            : pickRandom(pool);
         if (phase === 'hunter-night-shot') resolveNightHunterShot(code, room, target);
         else                               resolveDayHunterShot(code, room, target);
     }, 2500 + Math.random() * 2000);
@@ -711,6 +980,7 @@ function freshGameState(room, narratorPlayerId, assignments) {
         villageChat:             [],
         wolfChat:                [],
         botTimers:               [],
+        botMemory:               {},
     };
 }
 
@@ -855,6 +1125,9 @@ function addTransformedWolves(room, g) {
 function startNight(code, room) {
     const g = room.game;
     g.phase = 'night';
+
+    // Bots vergessen über Nacht einen Teil ihres Wissens (menschlicher)
+    botMemoryNightlyForget(room, g);
 
     // Jekyll & Hyde wechselt jede Nacht die Seite: ungerade Nächte Jekyll (Dorf), gerade Nächte Hyde (Wolf)
     const jekyllId = findPlayerByRole(room, 'JekylUndHyde');
@@ -1042,6 +1315,12 @@ function processNightAction(code, room, entry, actorId, payload) {
         io.to(actorId).emit('view-result', { targetName: tname, roleName: trole, roleId: room.assignments[payload.targetId] });
         addEvent(g, `Seherin hat die Karte von ${tname} angeschaut.`);
         g.nightLog.push(`Seherin sah: ${tname} = ${trole}`);
+        // Seherin-Bot merkt sich das Ergebnis wie ein menschlicher Spieler
+        if (isBotPlayer(room, actorId)) {
+            botMemoryOf(g, actorId).seen.add(payload.targetId);
+            if (WOLF_IDS.has(room.assignments[payload.targetId])) memLearnWolf(g, actorId, payload.targetId);
+            else memLearnCleared(g, actorId, payload.targetId);
+        }
 
     } else if (entry.actionType === 'witch') {
         const isHeal      = payload.heal || payload.action === 'heal';
@@ -1336,12 +1615,16 @@ function endNight(code, room) {
         lines.push(silberWolfDied
             ? `Die Silberwaffen haben einen Werwolf getötet! ${playerName(room, g.nightVictim)} überlebt.`
             : `Die Silberwaffen schützen ${playerName(room, g.nightVictim)}.`);
+        // Öffentlich: das Angriffsopfer wurde namentlich genannt → kein Werwolf
+        memBroadcastCleared(room, g, g.nightVictim);
     } else if (g.nightVictim) {
         const vname = playerName(room, g.nightVictim);
         const dorfmatratzeDied = dorfmatrazeId && g.pendingDeaths.has(dorfmatrazeId)
             && g.dorfmatraze_sleep === g.nightVictim;
         if (g.hexeHealTarget === g.nightVictim) {
             lines.push(`Die Werwölfe haben ${vname} angegriffen — die Hexe hat sie/ihn gerettet.`);
+            // Öffentlich: das gerettete Opfer lebt und ist damit geklärt
+            memBroadcastCleared(room, g, g.nightVictim);
             if (dorfmatratzeDied) {
                 lines.push(`Die Dorfmatratze schlief bei ${vname} und ist trotzdem gestorben.`);
             }
@@ -1640,6 +1923,16 @@ function castDayNomination(code, room, voterId, targetId) {
     g.dayNominations[voterId] = effectiveTarget;
     io.to(voterId).emit('day-nomination-done');
 
+    // Bots beobachten das Anklageverhalten: wer einen (für sie) Geklärten
+    // anklagt, macht sich verdächtig; der Angeklagte rückt leicht in den Fokus
+    if (effectiveTarget) {
+        room.players.filter(p => p.isBot && g.alive.has(p.id) && p.id !== voterId).forEach(p => {
+            const m = botMemoryOf(g, p.id);
+            if (m.cleared.has(effectiveTarget)) memSuspect(g, p.id, voterId, 0.75);
+            else if (effectiveTarget !== p.id)  memSuspect(g, p.id, effectiveTarget, 0.25);
+        });
+    }
+
     const nominations = Object.values(g.dayNominations);
     const tally = {};
     for (const nid of nominations) { if (nid) tally[nid] = (tally[nid] ?? 0) + 1; }
@@ -1723,6 +2016,16 @@ function processDayVotes(code, room) {
         addEvent(g, 'Auch die Stichwahl endet unentschieden — niemand wird eliminiert.');
     } else {
         addEvent(g, 'Unentschieden — niemand wird eliminiert.');
+    }
+
+    // Bots werten das aufgedeckte Ergebnis aus: Wähler eines Unschuldigen werden
+    // verdächtiger, Wähler eines enttarnten Werwolfs vertrauenswürdiger
+    if (eliminated) {
+        const wasWolf = isWolf(room, eliminated);
+        for (const [voterId, tid] of Object.entries(g.dayVotes)) {
+            if (tid !== eliminated || !g.alive.has(voterId)) continue;
+            memBroadcastSuspect(room, g, voterId, wasWolf ? -0.5 : 1);
+        }
     }
 
     endDay(code, room, eliminated, false, narrSurvived);
@@ -1899,7 +2202,7 @@ io.on('connection', (socket) => {
         rooms.set(code, {
             hostId: socket.id, players: [host], selectedCards: [],
             messages: [], phase: 'lobby', narratorMode: false,
-            maxAccusations: 3, designatedNarrator: null,
+            maxAccusations: 3, botIntelligence: 2, designatedNarrator: null,
             disconnectTimers: new Map(),
         });
         socket.join(code);
@@ -2229,6 +2532,15 @@ io.on('connection', (socket) => {
         const n = parseInt(value, 10);
         if (!Number.isFinite(n) || n < 1 || n > 10) return;
         ctx.room.maxAccusations = n;
+        broadcast(ctx.code);
+    });
+
+    socket.on('set-bot-intelligence', ({ value }) => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx || ctx.room.hostId !== socket.id) return;
+        const n = parseInt(value, 10);
+        if (!BOT_INTELLIGENCE[n]) return;
+        ctx.room.botIntelligence = n;
         broadcast(ctx.code);
     });
 

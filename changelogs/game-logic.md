@@ -65,3 +65,29 @@
 - Fix 3: join-spectator akzeptiert auch Spieler in pendingDeaths und sendet sofort einen Schnappschuss (Phase, Events, Spielerliste) — kein Warten mehr auf das nächste Ereignis
 - Bots werden nicht in g.spectators aufgenommen
 - Getestet: 4-Spieler-Test — Nacht-Opfer erhält you-are-dead, wird Zuschauer und empfängt sofort Events + Rollenliste
+
+## [2026-07-10 09:20] Intelligente Bots: Gedächtnis, Persönlichkeiten, Schlauheitsgrad (server.js)
+
+### Bot-Gedächtnis (`g.botMemory`)
+- Jeder Bot merkt sich Fakten wie ein menschlicher Spieler: `knownWolves` (sicher Werwolf), `cleared` (sicher unschuldig), `seen` (Seherin: bereits angesehen) und einen `suspicion`-Zähler pro Mitspieler.
+- **Wissensquellen privat:** Seherin-Bot speichert jedes Kartenergebnis; Hexen-Bot lernt aus dem genannten Wolfsopfer, dass es kein Werwolf sein kann (sieht dasselbe wie ein Mensch — inkl. verstecktem Opfer bei geschützter Dorfmatratze via `buildWitchExtra`).
+- **Wissensquellen öffentlich (alle Bots):** von der Hexe gerettetes Opfer und Silberschmied-Überlebender gelten als geklärt; Wähler eines enttarnten Unschuldigen werden verdächtiger, Wähler eines enttarnten Werwolfs vertrauenswürdiger; wer einen (für den Bot) Geklärten anklagt, macht sich verdächtig.
+- **Vergessen:** Zu Nachtbeginn (`botMemoryNightlyForget`) verliert jeder Bot pro Fakt mit einer vom Schlauheitsgrad abhängigen Chance sein Wissen; Verdacht verblasst schrittweise. Liebespartner/Katz-und-Maus-Partner werden nie vergessen (on-the-fly via `botBondedIds`).
+- Reconnect-sicher: `replacePlayerSocket` zieht Spieler-IDs in allen Bot-Gedächtnissen nach.
+
+### Persönlichkeiten (`BOT_PERSONALITIES`)
+- Jeder Bot bekommt bei Erstellung zufällig eine von vier Persönlichkeiten: **aggressiv** (klagt viel an, setzt Fähigkeiten schnell ein), **zurückhaltend** (klagt selten an, spart Fähigkeiten), **Mitläufer** (springt auf laufende Anklagen auf, stimmt für den Führenden), **ausgewogen**.
+- **Herr/Idol-Verrat als Strategie:** Ergebene Magd und Wildes Kind schonen ihren Herrn/ihr Idol normalerweise — mit persönlichkeitsabhängiger `betrayChance` klagen sie ihn aber absichtlich an, um die Rolle zu erben bzw. zum Werwolf zu werden.
+- Persönlichkeit wird in der Lobby als Tag am Bot angezeigt.
+
+### Schlauheitsgrad (Host-Einstellung, `set-bot-intelligence`)
+- 3 Stufen: **Einfach** (Bots nutzen Wissen selten, vergessen viel), **Normal**, **Schlau** (nutzen Wissen fast immer, vergessen kaum). Steuert `useChance` pro Entscheidung und die nächtliche `forgetChance`.
+
+### Neue Entscheidungslogik (statt purem Zufall)
+- **Seherin:** sieht niemanden doppelt an, bevorzugt Verdächtige, meidet bereits Geklärte.
+- **Hexe:** heilt sich selbst und ihren Liebespartner immer; heilt Geklärte bevorzugt; vergiftet bekannte Werwölfe gezielt, sonst den Verdächtigsten — nie Partner oder Geklärte (wenn schlau).
+- **Gendarm:** verhaftet fast nur noch bei sicherem Wissen über einen Werwolf (vorher: 15 % Zufallsverhaftung = meist Selbstmord).
+- **Schutzrollen** (Dorfmatratze, Silberschmied, Händler, Magd, Wildes Kind): wählen vertrauenswürdige Ziele statt zufälliger.
+- **Anklage/Abstimmung:** bekannte Werwölfe werden zielsicher angeklagt/gewählt; Partner, Rudel (bei Wolf-Bots) und Geklärte werden verschont; Mitläufer folgen der Menge.
+- **Jäger:** schießt auf den Verdächtigsten statt blind — nie auf den eigenen Partner.
+- Zufallsrauschen in allen Bewertungen hält Bots unberechenbar; per Smoke-Test (Host + 7 Bots, volles Spiel bis Wolfssieg) verifiziert.

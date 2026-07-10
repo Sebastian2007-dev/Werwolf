@@ -43,6 +43,16 @@ const accusationsSetting    = document.getElementById('accusations-setting');
 const maxAccusationsInput   = document.getElementById('max-accusations-input');
 const accusationsMinus      = document.getElementById('accusations-minus');
 const accusationsPlus       = document.getElementById('accusations-plus');
+const botIntelSetting       = document.getElementById('bot-intel-setting');
+const botIntelSelect        = document.getElementById('bot-intel-select');
+
+// Anzeige-Labels für die Bot-Persönlichkeiten (Server: player.personality)
+const PERSONALITY_LABELS = {
+    aggressiv:      'aggressiv',
+    zurueckhaltend: 'zurückhaltend',
+    mitlaeufer:     'Mitläufer',
+    ausgewogen:     'ausgewogen',
+};
 
 let isNarratorMode = false;
 const chatLog       = document.getElementById('chat-log');
@@ -87,6 +97,7 @@ socket.on('room-created', ({ roomCode: code }) => {
     startBtn.hidden = false;
     narratorToggle.hidden = false;
     accusationsSetting.hidden = false;
+    botIntelSetting.hidden = false;
     addBotBtn.hidden = false;
     // Persist code in URL so a page reload rejoins the same room
     const url = new URL(window.location.href);
@@ -108,6 +119,9 @@ socket.on('room-updated', (room) => {
     updateFooter(room);
     if (isHost && room.maxAccusations != null) {
         maxAccusationsInput.value = room.maxAccusations;
+    }
+    if (isHost && room.botIntelligence != null) {
+        botIntelSelect.value = String(room.botIntelligence);
     }
 });
 
@@ -155,7 +169,7 @@ function renderPlayers(players) {
         return `
         <li class="player-item${p.isReady ? ' is-ready' : ''}${isMe ? ' is-me' : ''}${isDesNarrator ? ' is-narrator' : ''}${p.isBot ? ' is-bot' : ''}">
             ${p.isHost ? '<span class="player-item__crown" title="Spielleiter">&#9812;</span>' : ''}
-            <span class="player-item__name">${h(p.name)}${isMe ? ' <em style="opacity:.5;font-style:normal">(du)</em>' : ''}${isDesNarrator ? ' <em style="opacity:.6;font-style:normal">(Erzähler)</em>' : ''}</span>
+            <span class="player-item__name">${h(p.name)}${isMe ? ' <em style="opacity:.5;font-style:normal">(du)</em>' : ''}${isDesNarrator ? ' <em style="opacity:.6;font-style:normal">(Erzähler)</em>' : ''}${p.isBot && p.personality ? `<span class="player-item__persona">${h(PERSONALITY_LABELS[p.personality] ?? p.personality)}</span>` : ''}</span>
             ${reqRole ? `<span class="player-item__request">${h(reqRole.name)}</span>` : ''}
             ${!p.isHost ? `<span class="player-item__status${p.isReady ? '' : ' is-waiting'}">${p.isReady ? '&#10003; bereit' : 'nicht bereit'}</span>` : ''}
             ${hostActions}
@@ -431,6 +445,12 @@ accusationsMinus.addEventListener('click', () => {
 accusationsPlus.addEventListener('click', () => {
     const v = parseInt(maxAccusationsInput.value, 10);
     if (v < 10) { maxAccusationsInput.value = v + 1; emitAccusations(); }
+});
+
+// Bot intelligence setting
+botIntelSelect.addEventListener('change', () => {
+    const v = parseInt(botIntelSelect.value, 10);
+    if (v >= 1 && v <= 3) socket.emit('set-bot-intelligence', { value: v });
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -126,3 +126,8 @@
 - Rollen-Aufdeckung: alle Spieler als Chips mit ihrer wahren Rolle, Tote durchgestrichen, der eigene Eintrag gold umrandet
 - Ereignisprotokoll mit Zeitstempeln, Phasen-Einträge (Nacht/Tag/Stichwahl) gold hervorgehoben, Auto-Scroll nur wenn man unten steht
 - game.html: spectator-panel um Status-Zeile und Rollen-Grid erweitert; game.js: narrator-update-Handler komplett neu; game.css: Geisterblick-Styles
+
+## [2026-07-10 09:20] Lobby: Bot-Schlauheit-Einstellung + Persönlichkeits-Tags
+- Neue Host-Einstellung „Bot-Schlauheit" (Einfach/Normal/Schlau) im Lobby-Footer neben „Max. Anklagen" — synchronisiert über `set-bot-intelligence`/`room-updated`.
+- Bots zeigen in der Spielerliste ihre Persönlichkeit als kleinen Tag (aggressiv, zurückhaltend, Mitläufer, ausgewogen).
+- Neue Styles: `.bot-intel-select`, `.player-item__persona` (lobby.css).

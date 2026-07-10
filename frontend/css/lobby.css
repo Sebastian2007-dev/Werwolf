@@ -264,6 +264,18 @@ body {
 
 .player-item.is-bot .player-item__name { color: rgba(160,190,230,0.9); }
 
+/* Persönlichkeits-Tag eines Bots (z. B. "aggressiv") */
+.player-item__persona {
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid rgba(160,190,230,0.3);
+    border-radius: 999px;
+    font-size: 0.65rem;
+    color: rgba(160,190,230,0.7);
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
 /* === Card grid (cards column) === */
 .cards-header {
     display: flex;
@@ -604,6 +616,20 @@ body {
 .num-spin__input:focus { outline: none; }
 .num-spin__input::-webkit-inner-spin-button,
 .num-spin__input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Bot-Schlauheit (Host-Einstellung) */
+.bot-intel-select {
+    padding: 0.35rem 0.5rem;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.bot-intel-select:focus { outline: none; border-color: rgba(200,170,110,0.6); }
+.bot-intel-select option { background: #14141f; color: var(--text); }
 
 /* === Overlay === */
 .overlay {
