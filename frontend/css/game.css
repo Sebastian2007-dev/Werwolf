@@ -258,6 +258,34 @@ body.is-day .card-flip {
     70%       { transform: scale(1.15); }
 }
 
+/* Karten-Bestätigung vor der ersten Nacht (Auto-Modus) */
+.card-confirm-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1.4rem;
+    background: rgba(200,170,110,0.07);
+    border: 1px solid rgba(200,170,110,0.28);
+    border-radius: 10px;
+    animation: panel-appear 0.4s cubic-bezier(0.2,0,0,1);
+}
+.card-confirm-panel[hidden] { display: none; }
+.card-confirm-panel__hint {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+.card-confirm-panel__hint[hidden] { display: none; }
+.card-confirm-panel__btn { margin-top: 0; }
+.card-confirm-panel__btn[hidden] { display: none; }
+.card-confirm-panel__waiting {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+.card-confirm-panel__waiting[hidden] { display: none; }
+
 .katz-maus-panel {
     padding: 0.65rem 1.2rem;
     background: rgba(180,140,70,0.09);
@@ -339,6 +367,16 @@ body.is-day .card-flip {
 }
 
 /* Live-Status: aktuelle Phase / wer gerade am Zug ist */
+.spectator-panel__death-reason {
+    margin: 0;
+    padding: 0.8rem 1rem;
+    color: #ffd0c7;
+    background: rgba(180, 45, 35, 0.18);
+    border-bottom: 1px solid rgba(220, 90, 70, 0.22);
+    font-weight: 700;
+    line-height: 1.4;
+}
+
 .spectator-panel__status {
     padding: 0.55rem 1rem;
     margin: 0;
@@ -1365,6 +1403,219 @@ body.is-day .day-btn--confirm {
 /* ══════════════════════════════════════════════════════════════════════════════
    TRANSFORM OVERLAYS (WildesKind, Jack, Ergebene Magd)
    ══════════════════════════════════════════════════════════════════════════════ */
+/* ── Einkaufs-Hinweis (Händler) im Tag-Panel ───────────────────────────────── */
+.day-panel__away-note {
+    font-size: 0.85rem;
+    color: #c8a050;
+    background: rgba(180,140,70,0.1);
+    border: 1px solid rgba(180,140,70,0.3);
+    border-radius: 8px;
+    padding: 0.4rem 0.9rem;
+    text-align: center;
+}
+.day-panel__away-note[hidden] { display: none; }
+
+/* ── Spielbericht (Game-Over) ──────────────────────────────────────────────── */
+.game-btn--report {
+    background: rgba(200,170,110,0.12);
+    border-color: rgba(200,170,110,0.4);
+    color: var(--accent);
+    margin-top: 0.75rem;
+}
+.game-btn--report[hidden] { display: none; }
+
+.modal__content--report { max-width: 34rem; width: min(34rem, 92vw); }
+
+.report-log {
+    max-height: 62vh;
+    overflow-y: auto;
+    padding-right: 0.4rem;
+    text-align: left;
+}
+.report-log__section {
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 1rem 0 0.35rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid rgba(200,170,110,0.25);
+}
+.report-log__section:first-child { margin-top: 0; }
+.report-log__line {
+    font-size: 0.88rem;
+    color: var(--text);
+    margin: 0.3rem 0;
+    padding-left: 0.85rem;
+    text-indent: -0.85rem;
+}
+
+/* ── Gendarm: Tag-Eingriff vor der Abstimmung ──────────────────────────────── */
+.gendarm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 85;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.85rem;
+    padding: 2rem 1.5rem;
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(20,35,70,0.85) 0%, rgba(4,6,14,0.98) 70%);
+    animation: overlay-dramatic 0.7s cubic-bezier(0.2,0,0,1);
+}
+.gendarm-overlay[hidden] { display: none; }
+
+.gendarm-offer,
+.gendarm-reveal,
+.gendarm-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.7rem;
+    text-align: center;
+}
+.gendarm-offer[hidden],
+.gendarm-reveal[hidden],
+.gendarm-result[hidden] { display: none; }
+
+.gendarm-badge {
+    font-size: 3rem;
+    filter: drop-shadow(0 0 24px rgba(120,160,255,0.6));
+    animation: text-rise 0.5s both;
+}
+.gendarm-badge--spin { animation: gendarm-badge-spin 1s cubic-bezier(0.2,0,0,1) both; }
+@keyframes gendarm-badge-spin {
+    from { opacity: 0; transform: rotate(-540deg) scale(0.2); }
+    60%  { opacity: 1; transform: rotate(20deg)   scale(1.25); }
+    to   { opacity: 1; transform: rotate(0)       scale(1); }
+}
+
+.gendarm-offer__title {
+    font-family: var(--font-display);
+    font-size: 1.35rem;
+    color: var(--accent);
+    margin: 0;
+    animation: text-rise 0.5s 0.1s both;
+}
+.gendarm-offer__hint {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin: 0;
+    animation: text-rise 0.5s 0.2s both;
+}
+.gendarm-offer__timer {
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    font-weight: 900;
+    color: #8fb0ff;
+    margin: 0;
+    text-shadow: 0 0 30px rgba(120,160,255,0.5);
+}
+.gendarm-offer__actions { display: flex; gap: 0.75rem; }
+
+.gendarm-reveal__name {
+    font-family: var(--font-display);
+    font-size: 1.7rem;
+    color: #8fb0ff;
+    margin: 0;
+    text-shadow: 0 0 40px rgba(120,160,255,0.5);
+    animation: text-rise 0.5s 0.25s both;
+}
+.gendarm-reveal__sub {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    color: var(--text);
+    margin: 0;
+    animation: text-rise 0.5s 0.35s both;
+}
+.gendarm-reveal__status {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin: 0;
+    animation: status-pulse 1.6s ease-in-out infinite;
+}
+.gendarm-reveal__status[hidden] { display: none; }
+@keyframes status-pulse {
+    0%, 100% { opacity: 0.45; }
+    50%       { opacity: 1; }
+}
+
+.gendarm-result__eyebrow {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    color: var(--accent);
+    margin: 0;
+    animation: text-rise 0.5s both;
+}
+.gendarm-result__card img {
+    width: 140px;
+    border-radius: 10px;
+    box-shadow: 0 0 40px rgba(120,160,255,0.3), 0 10px 30px rgba(0,0,0,0.6);
+    animation: gendarm-card-pop 0.6s 0.3s cubic-bezier(0.2,0,0,1) both;
+}
+@keyframes gendarm-card-pop {
+    from { opacity: 0; transform: scale(0.4) rotate(-8deg); }
+    to   { opacity: 1; transform: scale(1)   rotate(0); }
+}
+.gendarm-result__text {
+    font-size: 1rem;
+    color: var(--text);
+    margin: 0;
+    max-width: 26rem;
+    animation: text-rise 0.5s 0.55s both;
+}
+
+/* ── Zigeunerin: öffentlicher Rache-Fluch ──────────────────────────────────── */
+.curse-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 85;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    overflow-y: auto;
+    background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(55,20,70,0.85) 0%, rgba(8,4,14,0.98) 70%);
+    animation: overlay-dramatic 0.7s cubic-bezier(0.2,0,0,1);
+}
+.curse-overlay[hidden] { display: none; }
+
+.curse-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.85rem;
+    text-align: center;
+    max-width: 30rem;
+}
+.curse-box__eyebrow {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    color: #c08ae0;
+    margin: 0;
+    text-shadow: 0 0 30px rgba(180,110,220,0.5);
+    animation: text-rise 0.5s both;
+}
+.curse-box__text {
+    font-size: 1rem;
+    color: var(--text);
+    margin: 0;
+    animation: text-rise 0.5s 0.15s both;
+}
+.curse-overlay.is-struck .curse-box__text {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    animation: curse-strike 0.7s cubic-bezier(0.2,0,0,1) both;
+}
+@keyframes curse-strike {
+    from { opacity: 0; transform: scale(1.4); text-shadow: 0 0 60px rgba(180,110,220,1); }
+    to   { opacity: 1; transform: scale(1);   text-shadow: 0 0 25px rgba(180,110,220,0.4); }
+}
+
 .wildeskind-overlay,
 .magd-overlay,
 .hunter-overlay {

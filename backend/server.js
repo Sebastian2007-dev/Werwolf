@@ -41,11 +41,9 @@ const NIGHT_ORDER = [
     // Glöckner MUSS vor den Werwölfen dran sein, damit sein Läuten die Wolfsrunde derselben Nacht ausfallen lassen kann
     { group: 'Glöckner',        roleIds: ['Gloeckner'],                                        firstNightOnly: false,  actionType: 'optional',      hint: 'Möchtest du heute die Glocken läuten? (Optional, einmalig)' },
     { group: 'Werwölfe',        roleIds: ['Werwolf_blau','Werwolf_gelb','Werwolf_gruen','Werwolf_rot'], firstNightOnly: false, actionType: 'kill', hint: 'Wählt gemeinsam ein Opfer aus.' },
-    { group: 'Zigeunerin',      roleIds: ['Zigeunerin'],                                       firstNightOnly: false,  actionType: 'select-one',    hint: 'Du wurdest angeklagt — verfluche einen Werwolf, der mit dir stirbt.' },
     { group: 'Hexe',            roleIds: ['Hexe'],                                             firstNightOnly: false,  actionType: 'witch',         hint: 'Du kannst heilen oder vergiften.' },
     { group: 'Einsamer Wolf',   roleIds: ['EinsamerWolf'],                                     everySecondNight: true, actionType: 'select-one',    hint: 'Wähle einen Werwolf, den du tötest.' },
     // Jack the Ripper hat KEINE eigene Nachtwahl — er mutiert nur, wenn die Dorfmatratze bei ihm schläft
-    { group: 'Gendarm',         roleIds: ['Gendarm'],                                          firstNightOnly: false,  actionType: 'optional-kill', hint: 'Möchtest du jemanden verhaften? (Optional, einmalig)' },
 ];
 
 const ROLE_NAMES = {
@@ -73,10 +71,8 @@ const AUTO_NIGHT_MSGS = {
     'Wildes Kind':    'Das wilde Kind schleicht durch das Dickicht.',
     'Ergebene Magd':  'Eine treue Seele wacht über ihren Herrn.',
     'Glöckner':       'In der Ferne läuten die Kirchenglocken.',
-    'Gendarm':        'Der Gendarm schleicht durchs Dorf.',
     'Dieb':           'Ein Dieb schleicht durch das Haus.',
     'Jack the Ripper':'Im Nebel schleicht eine dunkle Gestalt.',
-    'Zigeunerin':     'Ein alter Fluch liegt in der Luft…',
 };
 
 // ── Room helpers ──────────────────────────────────────────────────────────────
@@ -148,7 +144,9 @@ function replacePlayerSocket(room, oldId, newId) {
         replaceIdInSet(g.alive, oldId, newId);
         replaceIdInSet(g.pendingDeaths, oldId, newId);
         replaceIdInSet(g.wolfConfirms, oldId, newId);
+        replaceIdInSet(g.cardConfirms, oldId, newId);
         replaceObjectKey(g.wolfVotes, oldId, newId);
+        replaceObjectKey(g.deathReasons, oldId, newId);
 
         if (g.nightVictim === oldId)             g.nightVictim             = newId;
         if (g.hexeHealTarget === oldId)          g.hexeHealTarget          = newId;
@@ -157,10 +155,9 @@ function replacePlayerSocket(room, oldId, newId) {
         if (g.haendler_away === oldId)           g.haendler_away           = newId;
         if (g.magd_herr      === oldId)          g.magd_herr               = newId;
         if (g.wildesKind_idol === oldId)         g.wildesKind_idol         = newId;
-        if (g.silberschmied_protected === oldId) g.silberschmied_protected = newId;
+        replaceKeyInMap(g.silberschmied_protected, oldId, newId);
         if (g.einsamerWolf_target === oldId)     g.einsamerWolf_target     = newId;
-        if (g.gendarm_target === oldId)          g.gendarm_target          = newId;
-        if (g.zigeunerin_target === oldId)       g.zigeunerin_target       = newId;
+        if (g.zigeunerin_cursed === oldId)       g.zigeunerin_cursed       = newId;
         replaceIdInArray(g.lovers, oldId, newId);
         replaceIdInSet(g.spectators, oldId, newId);
         replaceIdInArray(g.dayAccused, oldId, newId);
@@ -225,10 +222,18 @@ function pushCurrentGameState(code, room, socket) {
         return;
     }
 
+    // Zigeunerin wählt ihren Rache-Fluch als Tote — Reconnect trotzdem bedienen
+    if (g.phase === 'zigeunerin-curse' && findPlayerByRole(room, 'Zigeunerin') === socket.id) {
+        socket.emit('zigeunerin-curse-choose', {
+            targets: [...g.alive].filter(id => id !== socket.id)
+                .map(id => ({ id, name: playerName(room, id) })),
+        });
+    }
+
     // Dead player → spectator mode
     if (!g.alive.has(socket.id)) {
         g.spectators.add(socket.id);
-        socket.emit('you-are-dead');
+        socket.emit('you-are-dead', { reason: g.deathReasons?.[socket.id] ?? 'Du bist gestorben.' });
         const entry = g.nightQueue?.[g.nightIdx] ?? null;
         socket.emit('narrator-update', {
             phase: g.phase, round: g.round,
@@ -283,7 +288,8 @@ function pushCurrentGameState(code, room, socket) {
         socket.emit('phase-changed', {
             phase: 'day-accusation', round: g.round,
             players: aliveList(), maxAccusations: g.maxAccusations,
-            awayPlayerId: g.haendler_away || null,
+            awayPlayerId:   g.haendler_away || null,
+            awayPlayerName: g.haendler_away ? playerName(room, g.haendler_away) : null,
         });
         const nominations = Object.values(g.dayNominations);
         if (nominations.length > 0) {
@@ -312,7 +318,9 @@ function pushCurrentGameState(code, room, socket) {
         socket.emit('phase-changed', {
             phase: 'day-voting', round: g.round,
             accused: g.dayAccused.map(id => ({ id, name: playerName(room, id), count: counts[id] ?? 0 })),
-            runoff: g.dayRunoff, awayPlayerId: g.haendler_away || null,
+            runoff: g.dayRunoff,
+            awayPlayerId:   g.haendler_away || null,
+            awayPlayerName: g.haendler_away ? playerName(room, g.haendler_away) : null,
             players: aliveList(),
         });
         const votedIds = Object.keys(g.dayVotes);
@@ -354,8 +362,43 @@ function pushCurrentGameState(code, room, socket) {
     } else if (g.phase === 'game-over' && g.gameOverPayload) {
         socket.emit('game-over', g.gameOverPayload);
 
+    } else if (g.phase === 'gendarm-window' || g.phase === 'gendarm-shoot') {
+        socket.emit('phase-changed', {
+            phase: g.phase, round: g.round,
+            gendarmName: g.phase === 'gendarm-shoot'
+                ? playerName(room, findPlayerByRole(room, 'Gendarm')) : undefined,
+        });
+        // Gendarm bekommt seine Abfrage bzw. Zielauswahl nach Reload erneut
+        if (findPlayerByRole(room, 'Gendarm') === socket.id && !g.gendarm_used) {
+            if (g.phase === 'gendarm-window') {
+                socket.emit('gendarm-offer', { countdown: 5 });
+            } else {
+                socket.emit('gendarm-choose', {
+                    targets: [...g.alive]
+                        .filter(id => id !== socket.id && id !== g.haendler_away)
+                        .map(id => ({ id, name: playerName(room, id) })),
+                });
+            }
+        }
+
+    } else if (g.phase === 'zigeunerin-curse') {
+        socket.emit('phase-changed', {
+            phase: 'zigeunerin-curse', round: g.round,
+            zigeunerinName: playerName(room, findPlayerByRole(room, 'Zigeunerin')),
+        });
+
     } else {
         socket.emit('phase-changed', { phase: g.phase, round: g.round });
+        // Auto-Modus vor der ersten Nacht: Karten-Bestätigung nachreichen,
+        // solange der Nacht-Countdown noch nicht läuft
+        if (g.phase === 'day-prep' && g.autoMode && g.round === 1 && !g.autoTimer) {
+            const pending = pendingCardConfirms(room);
+            if (pending.length > 0) {
+                socket.emit('card-confirm-update', {
+                    pending: pending.map(p => ({ id: p.id, name: p.name })),
+                });
+            }
+        }
     }
 
     // Re-send persistent role knowledge on reconnect
@@ -446,7 +489,45 @@ function pushVoicePeers(room) {
 // ── Auto-pilot helpers ────────────────────────────────────────────────────────
 
 function clearAutoTimers(g) {
-    if (g.autoTimer) { clearTimeout(g.autoTimer); g.autoTimer = null; }
+    if (g.autoTimer)    { clearTimeout(g.autoTimer);    g.autoTimer    = null; }
+    if (g.gendarmTimer) { clearTimeout(g.gendarmTimer); g.gendarmTimer = null; }
+    if (g.curseTimer)   { clearTimeout(g.curseTimer);   g.curseTimer   = null; }
+}
+
+// ── Karten-Bestätigung vor der ersten Nacht (Auto-Modus) ─────────────────────
+// Ohne Erzähler muss jeder menschliche Spieler bestätigen, dass er seine Karte
+// gesehen hat, bevor die erste Nacht beginnt. Bots gelten immer als bereit.
+
+function pendingCardConfirms(room) {
+    const g = room.game;
+    return room.players.filter(p =>
+        !p.isBot &&
+        p.id !== g.narratorId &&
+        p.isConnected !== false &&
+        g.alive.has(p.id) &&
+        !g.cardConfirms.has(p.id)
+    );
+}
+
+function pushCardConfirmState(code, room) {
+    const g = room.game;
+    if (!g || !g.autoMode || g.phase !== 'day-prep' || g.round !== 1) return;
+
+    const pending = pendingCardConfirms(room);
+    if (pending.length > 0) {
+        io.to(code).emit('card-confirm-update', {
+            pending: pending.map(p => ({ id: p.id, name: p.name })),
+        });
+        return;
+    }
+
+    // Alle haben bestätigt → Countdown zur ersten Nacht (nur einmal starten)
+    if (g.autoTimer) return;
+    io.to(code).emit('card-confirm-update', { pending: [] });
+    io.to(code).emit('auto-day-starting', { countdown: 5, label: 'Nacht beginnt in' });
+    g.autoTimer = setTimeout(() => {
+        if (room.game?.phase === 'day-prep') startNight(code, room);
+    }, 5000);
 }
 
 function startAutoTurnTimer(code, room, playerIds) {
@@ -681,17 +762,6 @@ function botNightPayload(room, g, entry, botId) {
     if (entry.actionType === 'lovers-ack') return { acknowledged: true };
     if (entry.group === 'Glöckner') return Math.random() < persona.abilityChance ? { targetId: '__ring__' } : {};
     if (entry.group === 'Dieb')     return Math.random() < 0.5 ? { targetId: pickRandom(g.diebOptions ?? []) } : {};
-
-    if (entry.group === 'Gendarm') {
-        // Verhaften ist riskant: bei einem Unschuldigen stirbt der Gendarm mit.
-        const candidates = ids.filter(id => !bonded.has(id));
-        if (botActsSmart(room)) {
-            const knownWolf = candidates.find(id => mem.knownWolves.has(id));
-            if (knownWolf && Math.random() < 0.8) return { targetId: knownWolf };
-            return {}; // kein sicheres Ziel → lieber warten
-        }
-        return Math.random() < persona.abilityChance * 0.4 ? { targetId: pickRandom(candidates) } : {};
-    }
 
     if (entry.actionType === 'view') {
         // Seherin: niemanden doppelt ansehen, Verdächtige zuerst
@@ -934,11 +1004,13 @@ function resolveNightHunterShot(code, room, targetId) {
     let extraDeaths = [];
     if (targetId && g.alive.has(targetId) && !g.pendingDeaths.has(targetId) && targetId !== g.haendler_away) {
         addEvent(g, `${playerName(room, jaegerId)} (Jäger) erschoss ${playerName(room, targetId)}.`);
-        const deaths = applyDeath(code, room, targetId);
+        chronicleDay(g, `${playerName(room, jaegerId)} (Jäger) riss ${playerName(room, targetId)} (${roleName(room.assignments, targetId)}) mit in den Tod.`);
+        const deaths = applyDeath(code, room, targetId, 'Du bist durch den letzten Schuss des Jägers gestorben.');
         shotInfo    = deaths[0] ?? null;
         extraDeaths = deaths.slice(1);
     } else {
         addEvent(g, 'Der Jäger hat nicht geschossen.');
+        chronicleDay(g, 'Der Jäger schoss nicht.');
     }
     const remainingDeaths = (g.nightSummary?.deaths ?? []).filter(d => d.id !== jaegerId);
     io.to(code).emit('morning-full-reveal', {
@@ -1001,6 +1073,12 @@ function doPhaseAdvance(code, room) {
     } else if (g.phase === 'day-voting') {
         addEvent(g, 'Der Erzähler beendet die Abstimmung.');
         processDayVotes(code, room);
+    } else if (g.phase === 'gendarm-window' || g.phase === 'gendarm-shoot') {
+        addEvent(g, 'Der Erzähler überspringt den Gendarm.');
+        proceedAfterGendarm(code, room);
+    } else if (g.phase === 'zigeunerin-curse') {
+        addEvent(g, 'Der Erzähler überspringt den Fluch der Zigeunerin.');
+        resolveZigeunerinCurse(code, room, findPlayerByRole(room, 'Zigeunerin'), null);
     } else if (g.phase === 'day-result') {
         // Stand ein Sieg fest, wurde er nur für die Lynch-Auflösung aufgeschoben
         if (g.pendingWin) { endGame(code, room, g.pendingWin); return; }
@@ -1037,6 +1115,21 @@ function pickBalanced(selectedCards, n) {
         ...shuffle(wolves).slice(0, wolfCount),
         ...shuffle(nonWolves).slice(0, nonWolfCount),
     ]);
+}
+
+// Dieb: die 2 Wahlkarten stammen aus den nach dem Austeilen übrigen Karten
+// des ausgewählten Pools. Wolfskarten bleiben immer bei den Spielern; fehlen
+// übrige Karten, wird mit Dorfbewohnern aufgefüllt.
+function buildDiebOptions(poolCards, assignments) {
+    const remaining = [...poolCards];
+    for (const rid of Object.values(assignments)) {
+        const idx = remaining.indexOf(rid);
+        if (idx !== -1) remaining.splice(idx, 1);
+    }
+    const options = shuffle(remaining.filter(id => !WOLF_IDS.has(id)));
+    while (options.length < 2) options.push('Dorfbewohner');
+    // Doppelte Rollen wären als Auswahl sinnlos → auf eindeutige reduzieren
+    return [...new Set(options.slice(0, 2))];
 }
 
 // ── Wolf-vote helpers ─────────────────────────────────────────────────────────
@@ -1103,6 +1196,11 @@ function addEvent(game, text) {
     if (game.events.length > 300) game.events.shift();
 }
 
+// Spielbericht: Tages-Ereignisse mit Namen — wird erst am Spielende gezeigt
+function chronicleDay(g, text) {
+    g.chronicle.push({ section: `Tag ${Math.max(g.round - 1, 1)}`, text });
+}
+
 function playerStatusList(room, game) {
     return room.players
         .filter(p => p.id !== game.narratorId)
@@ -1130,6 +1228,7 @@ function freshGameState(room, narratorPlayerId, assignments) {
         narratorId:     narratorPlayerId,
         autoMode:       !narratorPlayerId,
         autoTimer:      null,
+        cardConfirms:   new Set(),
         alive:          new Set(Object.keys(assignments)),
         events:         [],
         hexeUsedHeal:   false,
@@ -1155,14 +1254,18 @@ function freshGameState(room, narratorPlayerId, assignments) {
         wildesKind_isWolf:       false,
         wildesKind_needsIdol:    false,
         alter_lives:             2,
-        silberschmied_protected: null,
+        // Ziel-ID -> Anzahl noch nicht verbrauchter Silberkugeln
+        silberschmied_protected: new Map(),
+        silberschmied_needsEquipment: false,
+        deathReasons:            {},
         einsamerWolf_target:     null,
         jack_isWolf:             false,
         jekyllIsWolf:            false,
-        zigeunerin_cursePending: false,
-        zigeunerin_target:       null,
-        gendarm_target:          null,
+        zigeunerin_cursed:       null,
+        zigeunerinDeaths:        null,
         gendarm_used:            false,
+        gendarmTimer:            null,
+        curseTimer:              null,
         gloeckner_used:          false,
         diebOptions:             null,
         spectators:              new Set(),
@@ -1171,17 +1274,19 @@ function freshGameState(room, narratorPlayerId, assignments) {
         botTimers:               [],
         botMemory:               {},
         reveals:                 [],   // Besondere Ereignisse für die Auflösung am Spielende
+        chronicle:               [],   // Voller Spielbericht ({section, text}) für das Bericht-Modal
     };
 }
 
 // Kills a player outside the night resolution (day vote, hunter shot, disconnect).
 // Applies the lover cascade and role transforms; returns info objects for every death.
-function applyDeath(code, room, deadId) {
+function applyDeath(code, room, deadId, reason = 'Du bist gestorben.') {
     const g = room.game;
     const deaths = [];
-    const kill = (id) => {
+    const kill = (id, deathReason) => {
         if (!g.alive.has(id)) return;
         g.alive.delete(id);
+        g.deathReasons[id] = deathReason;
         deaths.push({
             id,
             name:     playerName(room, id),
@@ -1191,13 +1296,13 @@ function applyDeath(code, room, deadId) {
         tryMagdTransform(code, room, id);
         tryWildesKindTransform(code, room, id);
         if (!isBotPlayer(room, id)) g.spectators.add(id);
-        io.to(id).emit('you-are-dead');
+        io.to(id).emit('you-are-dead', { reason: deathReason });
     };
-    kill(deadId);
+    kill(deadId, reason);
     if (g.lovers?.includes(deadId)) {
         const partner = g.lovers.find(id => id !== deadId);
         if (partner && g.alive.has(partner)) {
-            kill(partner);
+            kill(partner, `Du bist gestorben, weil dein Liebespartner ${playerName(room, deadId)} gestorben ist.`);
             addEvent(g, `Liebespaar: ${playerName(room, partner)} stirbt mit.`);
         }
     }
@@ -1224,10 +1329,17 @@ function tryMagdTransform(code, room, deadId) {
         g.hexeUsedHeal   = false;
         g.hexeUsedPoison = false;
     }
-    // Wildes Kind: die Magd wählt in der nächsten Nacht ein EIGENES Idol
-    if (newRoleId === 'WildesKind' && !g.wildesKind_isWolf) {
+    // Wildes Kind: Die Magd beginnt als neues Wildes Kind und wählt unabhängig
+    // vom Zustand ihres verstorbenen Herren in der nächsten Nacht ein Idol.
+    if (newRoleId === 'WildesKind') {
         g.wildesKind_idol      = null;
+        g.wildesKind_isWolf    = false;
         g.wildesKind_needsIdol = true;
+    }
+    // Silberschmied: Bereits verteilte, noch nicht verbrauchte Silberkugeln
+    // bleiben bestehen. Die Magd darf zusätzlich eine eigene Kugel ausrüsten.
+    if (newRoleId === 'Silberschmied') {
+        g.silberschmied_needsEquipment = true;
     }
     // (Alter, Glöckner, Gendarm: reset when those roles are implemented)
 
@@ -1256,24 +1368,17 @@ function tryWildesKindTransform(code, room, deadId) {
 function buildNightQueue(assignments, alive, round, g) {
     const queue = [];
     for (const tpl of NIGHT_ORDER) {
-        // Ausnahme: die Ergebene Magd hat das Wilde Kind geerbt und darf ihr Idol nachwählen
+        // Ausnahmen: Von der Ergebenen Magd geerbte Erstnacht-Fähigkeiten
+        // dürfen einmalig in der nächsten Nacht nachgeholt werden.
         const wildesKindNachwahl = tpl.group === 'Wildes Kind' && g?.wildesKind_needsIdol;
-        if (tpl.firstNightOnly  && round > 1 && !wildesKindNachwahl) continue;
+        const silberNachwahl = tpl.group === 'Silberschmied' && g?.silberschmied_needsEquipment;
+        if (tpl.firstNightOnly  && round > 1 && !wildesKindNachwahl && !silberNachwahl) continue;
         if (tpl.everySecondNight && round % 2 !== 0)   continue;
         if (tpl.group === 'Glöckner'        && g?.gloeckner_used)  continue;
-        if (tpl.group === 'Gendarm'         && g?.gendarm_used)    continue;
 
-        let pids;
-        if (tpl.group === 'Zigeunerin') {
-            // Fluch-Runde: nur nach ihrem Anklage-Tod — sie handelt als Tote
-            if (!g?.zigeunerin_cursePending) continue;
-            const zigId = Object.entries(assignments).find(([, rid]) => rid === 'Zigeunerin')?.[0];
-            pids = zigId ? [zigId] : [];
-        } else {
-            pids = Object.entries(assignments)
-                .filter(([pid, rid]) => tpl.roleIds.includes(rid) && alive.has(pid))
-                .map(([pid]) => pid);
-        }
+        const pids = Object.entries(assignments)
+            .filter(([pid, rid]) => tpl.roleIds.includes(rid) && alive.has(pid))
+            .map(([pid]) => pid);
 
         if (pids.length === 0) continue;
 
@@ -1300,6 +1405,12 @@ function addTransformedWolves(room, g) {
     pushIfAlive('WildesKind',    g.wildesKind_isWolf);
     pushIfAlive('JackTheRipper', g.jack_isWolf);
     pushIfAlive('JekylUndHyde',  g.jekyllIsWolf);
+
+    // Zigeunerin-Fluch: die verfluchte Person ist jetzt ein Werwolf
+    if (g.zigeunerin_cursed && g.alive.has(g.zigeunerin_cursed)
+        && !WOLF_IDS.has(room.assignments[g.zigeunerin_cursed])) {
+        extraIds.push(g.zigeunerin_cursed);
+    }
 
     if (extraIds.length === 0) return;
 
@@ -1349,8 +1460,6 @@ function startNight(code, room) {
     g.wolfVotes             = {};
     g.wolfConfirms          = new Set();
     g.einsamerWolf_target   = null;
-    g.gendarm_target        = null;
-    g.zigeunerin_target     = null;
 
     addEvent(g, `Nacht ${g.round} beginnt.`);
     io.to(code).emit('phase-changed', { phase: 'night', round: g.round });
@@ -1377,7 +1486,7 @@ function buildNightTargetsFor(room, g, entry, pid) {
     if (entry.group === 'Glöckner') {
         return [{ id: '__ring__', name: 'Glocken läuten' }];
     }
-    if (entry.group === 'Einsamer Wolf' || entry.group === 'Zigeunerin') {
+    if (entry.group === 'Einsamer Wolf') {
         return targets.filter(t => isWolf(room, t.id));
     }
     if (entry.actionType === 'kill') {
@@ -1631,14 +1740,27 @@ function processNightAction(code, room, entry, actorId, payload) {
             const tname = playerName(room, payload.targetId);
             addEvent(g, `Händler schickt jemanden einkaufen.`);
             g.nightLog.push(`Händler schickt ${tname} einkaufen.`);
+
+            // Beim Einkauf kann die Hexe ihre verbrauchten Tränke neu auffüllen.
+            // Die Rollen-ID wird direkt geprüft, damit auch eine Ergebene Magd,
+            // welche die Rolle der Hexe übernommen hat, davon profitiert.
+            if (room.assignments[payload.targetId] === 'Hexe') {
+                g.hexeUsedHeal   = false;
+                g.hexeUsedPoison = false;
+                g.nightLog.push(`Händler: ${tname} (Hexe) füllt beide Tränke wieder auf.`);
+                io.to(payload.targetId).emit('witch-potions-refilled');
+            }
         }
 
     } else if (entry.group === 'Silberschmied') {
         if (payload.targetId) {
-            g.silberschmied_protected = payload.targetId;
+            const bullets = g.silberschmied_protected.get(payload.targetId) ?? 0;
+            g.silberschmied_protected.set(payload.targetId, bullets + 1);
             addEvent(g, `Silberschmied rüstet jemanden mit Silberwaffen aus.`);
             g.nightLog.push(`Silberschmied → ${playerName(room, payload.targetId)} (Silberschutz)`);
+            g.reveals.push(`${aname} (Silberschmied) rüstete ${playerName(room, payload.targetId)} mit Silberwaffen aus.`);
         }
+        g.silberschmied_needsEquipment = false;
 
     } else if (entry.group === 'Einsamer Wolf') {
         if (payload.targetId) {
@@ -1646,22 +1768,6 @@ function processNightAction(code, room, entry, actorId, payload) {
             addEvent(g, `Einsamer Wolf hat ein Ziel ausgewählt.`);
             g.nightLog.push(`Einsamer Wolf → ${playerName(room, payload.targetId)}`);
         }
-
-    } else if (entry.group === 'Gendarm') {
-        if (payload.targetId) {
-            g.gendarm_target = payload.targetId;
-            g.gendarm_used   = true;
-            addEvent(g, `Gendarm verhaftet jemanden.`);
-            g.nightLog.push(`Gendarm → ${playerName(room, payload.targetId)}`);
-        }
-
-    } else if (entry.group === 'Zigeunerin') {
-        if (payload.targetId) {
-            g.zigeunerin_target = payload.targetId;
-            addEvent(g, `Die Zigeunerin spricht ihren Fluch aus.`);
-            g.nightLog.push(`Zigeunerin verflucht ${playerName(room, payload.targetId)}`);
-        }
-        g.zigeunerin_cursePending = false;
 
     } else if (entry.group === 'Glöckner') {
         if (payload.targetId === '__ring__') {
@@ -1680,6 +1786,10 @@ function processNightAction(code, room, entry, actorId, payload) {
 
     } else if (entry.group === 'Dieb') {
         const chosenRole = payload.targetId;
+        if (!chosenRole) {
+            g.reveals.push(`${aname} blieb Dieb.`);
+            g.nightLog.push('Dieb bleibt Dieb');
+        }
         if (chosenRole && g.diebOptions?.includes(chosenRole)) {
             room.assignments[actorId] = chosenRole;
             io.to(actorId).emit('role-changed', { roleId: chosenRole });
@@ -1745,9 +1855,13 @@ function endNight(code, room) {
             // Wolves attacked the away player → protected (was shopping)
             addEvent(g, `Die Werwölfe griffen jemanden an — die Person war einkaufen und blieb unverletzt.`);
             g.nightLog.push(`Händler-Schutz: ${playerName(room, g.haendler_away)} war einkaufen`);
-        } else if (g.silberschmied_protected === g.nightVictim && !isWolf(room, g.nightVictim)) {
+        } else if ((g.silberschmied_protected.get(g.nightVictim) ?? 0) > 0 && !isWolf(room, g.nightVictim)) {
             // Silberwaffe: victim survives, one random wolf dies instead
             silberProtected = true;
+            // Die Silberkugel wird beim ersten erfolgreichen Einsatz verbraucht.
+            const bulletsLeft = g.silberschmied_protected.get(g.nightVictim) - 1;
+            if (bulletsLeft > 0) g.silberschmied_protected.set(g.nightVictim, bulletsLeft);
+            else g.silberschmied_protected.delete(g.nightVictim);
             const aliveWolves = [...g.alive].filter(id => isWolf(room, id));
             if (aliveWolves.length > 0) {
                 silberWolfDied = aliveWolves[Math.floor(Math.random() * aliveWolves.length)];
@@ -1778,27 +1892,6 @@ function endNight(code, room) {
         g.nightLog.push(`Einsamer Wolf tötet Werwolf: ${playerName(room, g.einsamerWolf_target)}`);
     }
 
-    // Zigeunerin: her curse kills the chosen wolf
-    if (g.zigeunerin_target && g.alive.has(g.zigeunerin_target) && isWolf(room, g.zigeunerin_target)) {
-        g.pendingDeaths.add(g.zigeunerin_target);
-        g.nightLog.push(`Zigeunerin-Fluch tötet Werwolf: ${playerName(room, g.zigeunerin_target)}`);
-    }
-    g.zigeunerin_cursePending = false;
-
-    // Gendarm: kills the target; if the target is innocent, Gendarm also dies
-    if (g.gendarm_target && g.alive.has(g.gendarm_target)) {
-        g.pendingDeaths.add(g.gendarm_target);
-        if (!isWolf(room, g.gendarm_target)) {
-            const gendarmId = findPlayerByRole(room, 'Gendarm');
-            if (gendarmId && g.alive.has(gendarmId)) {
-                g.pendingDeaths.add(gendarmId);
-                g.nightLog.push(`Gendarm verhaftet Unschuldigen (${playerName(room, g.gendarm_target)}) — stirbt mit`);
-            }
-        } else {
-            g.nightLog.push(`Gendarm verhaftet Werwolf: ${playerName(room, g.gendarm_target)}`);
-        }
-    }
-
     // JackTheRipper: if Dorfmatratze encounters Jack tonight, she dies and Jack mutates
     const jackId = findPlayerByRole(room, 'JackTheRipper');
     if (jackId && g.alive.has(jackId) && !g.jack_isWolf && dorfmatrazeId && g.alive.has(dorfmatrazeId)) {
@@ -1827,7 +1920,6 @@ function endNight(code, room) {
         const causes =
             (g.nightVictim === alterId && g.hexeHealTarget !== alterId ? 1 : 0) +
             (g.hexePoisonTarget === alterId ? 1 : 0) +
-            (g.gendarm_target === alterId ? 1 : 0) +
             (dorfmatrazeId === alterId && g.dorfmatraze_sleep === g.nightVictim ? 1 : 0);
         g.alter_lives -= Math.max(causes, 1);
         if (g.alter_lives >= 1) {
@@ -1893,22 +1985,36 @@ function endNight(code, room) {
     if (g.einsamerWolf_target && g.pendingDeaths.has(g.einsamerWolf_target)) {
         lines.push(`Ein Werwolf wurde in dieser Nacht getötet.`);
     }
-    if (g.zigeunerin_target && g.pendingDeaths.has(g.zigeunerin_target)) {
-        lines.push(`Der Fluch der Zigeunerin hat einen Werwolf mit in den Tod gerissen.`);
-    }
-    if (g.gendarm_target) {
-        const gname = playerName(room, g.gendarm_target);
-        if (isWolf(room, g.gendarm_target)) {
-            lines.push(`Der Gendarm hat ${gname} verhaftet — einen Werwolf.`);
-        } else {
-            lines.push(`Der Gendarm hat einen Unschuldigen verhaftet und dabei sein Leben verloren.`);
-        }
-    }
     if (g.pendingDeaths.size === 0) {
         lines.push(`Heute früh wacht das Dorf unversehrt auf.`);
     }
 
     addEvent(g, `Die Nacht ist vorüber.`);
+
+    // Die Ursache wird nur dem betroffenen Spieler gezeigt und bleibt fuer
+    // einen spaeteren Reconnect gespeichert.
+    for (const id of g.pendingDeaths) {
+        let reason = 'Du bist in dieser Nacht gestorben.';
+        if (id === silberWolfDied) {
+            reason = `Du bist durch die Silberkugel gestorben, als dein Rudel ${playerName(room, g.nightVictim)} angegriffen hat.`;
+        } else if (id === g.hexePoisonTarget) {
+            reason = 'Du bist gestorben, weil die Hexe dich vergiftet hat.';
+        } else if (id === g.einsamerWolf_target) {
+            reason = 'Du bist gestorben, weil der Einsame Wolf dich getötet hat.';
+        } else if (id === dorfmatrazeId && g.jack_isWolf && g.dorfmatraze_sleep === jackId) {
+            reason = 'Du bist gestorben, weil du als Dorfmatratze bei Jack the Ripper geschlafen hast.';
+        } else if (id === dorfmatrazeId && g.dorfmatraze_sleep === g.nightVictim) {
+            reason = `Du bist mitgestorben, weil du bei ${playerName(room, g.nightVictim)} geschlafen hast und die Werwölfe dort angegriffen haben.`;
+        } else if (id === g.nightVictim) {
+            reason = 'Du bist gestorben, weil die Werwölfe dich angegriffen haben.';
+        } else if (g.lovers?.includes(id)) {
+            const partner = g.lovers.find(partnerId => partnerId !== id);
+            if (partner && g.pendingDeaths.has(partner)) {
+                reason = `Du bist gestorben, weil dein Liebespartner ${playerName(room, partner)} gestorben ist.`;
+            }
+        }
+        g.deathReasons[id] = reason;
+    }
 
     const summary = {
         lines,
@@ -1918,6 +2024,16 @@ function endNight(code, room) {
         nightLog: g.nightLog,
     };
     g.nightSummary = summary;
+
+    // Spielbericht: kompletter Nacht-Verlauf mit Namen + Tote des Morgens
+    const nightSection = `Nacht ${g.round}`;
+    g.nightLog.forEach(text => g.chronicle.push({ section: nightSection, text }));
+    g.chronicle.push({
+        section: nightSection,
+        text: summary.deaths.length
+            ? `Tot am Morgen: ${summary.deaths.map(d => `${d.name} (${d.roleName})`).join(', ')}`
+            : 'Keine Toten in dieser Nacht.',
+    });
 
     const morningPlayers = [...g.alive].map(id => ({ id, name: playerName(room, id) }));
     io.to(code).emit('phase-changed', { phase: 'night-summary', round: g.round, players: morningPlayers });
@@ -1939,6 +2055,7 @@ function endNight(code, room) {
 function isWolf(room, id) {
     const rid = room.assignments[id];
     return WOLF_IDS.has(rid)
+        || room.game.zigeunerin_cursed === id
         || (rid === 'WildesKind'    && room.game.wildesKind_isWolf)
         || (rid === 'JackTheRipper' && room.game.jack_isWolf)
         || (rid === 'JekylUndHyde'  && room.game.jekyllIsWolf);
@@ -1994,7 +2111,7 @@ function startDay(code, room) {
         tryMagdTransform(code, room, pid);
         tryWildesKindTransform(code, room, pid);
         if (!isBotPlayer(room, pid)) g.spectators.add(pid);
-        io.to(pid).emit('you-are-dead');
+        io.to(pid).emit('you-are-dead', { reason: g.deathReasons[pid] ?? 'Du bist gestorben.' });
     }
     g.pendingDeaths = new Set();
     g.round++;
@@ -2075,7 +2192,8 @@ function startDayAccusation(code, room) {
     io.to(code).emit('phase-changed', {
         phase: 'day-accusation', round: g.round,
         players: alivePlayers, maxAccusations: g.maxAccusations,
-        awayPlayerId: g.haendler_away || null,
+        awayPlayerId:   g.haendler_away || null,
+        awayPlayerName: g.haendler_away ? playerName(room, g.haendler_away) : null,
     });
     narratorPush(g, { phase: 'day-accusation', round: g.round, players: playerStatusList(room, g), events: g.events, awayPlayerId: g.haendler_away || null });
 
@@ -2088,8 +2206,10 @@ function processDayNominations(code, room) {
     const skipCount  = nominations.filter(v => v === null).length;
     const nomCount   = nominations.length - skipCount;
 
-    if (skipCount > nomCount) {
+    // Übersprungen wird nur, wenn ALLE überspringen — sonst zählt jede Anklage
+    if (nomCount === 0) {
         addEvent(g, 'Das Dorf überspringt die Abstimmung.');
+        chronicleDay(g, 'Alle haben übersprungen — keine Abstimmung.');
         endDay(code, room, null, true);
         return;
     }
@@ -2100,21 +2220,22 @@ function processDayNominations(code, room) {
     }
     const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
     g.dayAccused = sorted.slice(0, g.maxAccusations).map(([id]) => id);
+    chronicleDay(g, `Angeklagt: ${g.dayAccused.map(id => playerName(room, id)).join(', ') || 'niemand'}`);
 
-    // Zigeunerin: stirbt automatisch, sobald sie angeklagt wird — Fluch in der nächsten Nacht
+    // Zigeunerin: stirbt automatisch, sobald sie angeklagt wird — danach
+    // verflucht sie öffentlich eine Person, die sich in einen Werwolf verwandelt
     const zigId = findPlayerByRole(room, 'Zigeunerin');
     if (zigId && g.dayAccused.includes(zigId) && g.alive.has(zigId)) {
-        g.dayAccused = g.dayAccused.filter(id => id !== zigId);
-        addEvent(g, `${playerName(room, zigId)} (Zigeunerin) wurde angeklagt und stirbt — ihr Fluch wird die Nacht überdauern.`);
-        const deaths = applyDeath(code, room, zigId);
-        g.dayAlsoDied.push(...deaths);
-        g.zigeunerin_cursePending = true;
-
-        const win = checkWinCondition(room);
-        // Über finishDay, damit ihre Kartenaufdeckung vor dem Spielende gezeigt wird
-        if (win) { finishDay(code, room, {}); return; }
-        if (deaths.some(d => d.roleId === 'Jaeger')) { startDayHunterShot(code, room); return; }
-        if (g.dayAccused.length === 0) { endDay(code, room, null, false); return; }
+        // Ihre Anklage beendet den Abstimmungstag sofort. Andere Angeklagte
+        // kommen nicht mehr zur Wahl; die Zigeunerin ist das Hauptopfer.
+        g.dayAccused = [];
+        addEvent(g, `${playerName(room, zigId)} (Zigeunerin) wurde angeklagt und stirbt — ihr Rache-Fluch folgt sogleich.`);
+        chronicleDay(g, `${playerName(room, zigId)} (Zigeunerin) starb durch die Anklage.`);
+        const deaths = applyDeath(code, room, zigId, 'Du bist gestorben, weil du als Zigeunerin angeklagt wurdest.');
+        g.dayEliminatedInfo = deaths[0] ?? null;
+        g.dayAlsoDied.push(...deaths.slice(1));
+        startZigeunerinCurse(code, room, zigId, deaths);
+        return;
     }
 
     if (g.dayAccused.length === 0) {
@@ -2123,7 +2244,230 @@ function processDayNominations(code, room) {
         return;
     }
 
+    startGendarmWindow(code, room);
+}
+
+// ── Zigeunerin: öffentlicher Rache-Fluch nach ihrem Anklage-Tod ───────────────
+// Alle sehen, wen sie verflucht — die verfluchte Person verwandelt sich in
+// einen Werwolf (isWolf zählt sie ab sofort zum Rudel).
+
+const CURSE_CHOOSE_MS = 45000;
+
+function startZigeunerinCurse(code, room, zigId, deaths) {
+    const g = room.game;
+    g.phase = 'zigeunerin-curse';
+    g.zigeunerinDeaths = deaths;
+    const zigName = playerName(room, zigId);
+
+    const payload = { phase: 'zigeunerin-curse', round: g.round, zigeunerinName: zigName };
+    io.to(code).emit('phase-changed', payload);
+    narratorPush(g, { ...payload, players: playerStatusList(room, g), events: g.events });
+
+    const targetIds = [...g.alive].filter(id => id !== zigId);
+    if (targetIds.length === 0) { resolveZigeunerinCurse(code, room, zigId, null); return; }
+
+    if (isBotPlayer(room, zigId)) {
+        addBotTimer(g, () => {
+            if (room.game !== g || g.phase !== 'zigeunerin-curse') return;
+            // Rache: der eigene Top-Verdächtige wird verflucht
+            resolveZigeunerinCurse(code, room, zigId, botPickSuspect(g, zigId, targetIds));
+        }, 2500 + Math.random() * 2000);
+        return;
+    }
+
+    io.to(zigId).emit('zigeunerin-curse-choose', {
+        targets: targetIds.map(id => ({ id, name: playerName(room, id) })),
+    });
+    g.curseTimer = setTimeout(() => {
+        if (room.game === g && g.phase === 'zigeunerin-curse') {
+            resolveZigeunerinCurse(code, room, zigId, null);
+        }
+    }, CURSE_CHOOSE_MS);
+}
+
+function resolveZigeunerinCurse(code, room, zigId, targetId) {
+    const g = room.game;
+    if (g.phase !== 'zigeunerin-curse') return;
+    if (g.curseTimer) { clearTimeout(g.curseTimer); g.curseTimer = null; }
+
+    const zigName = playerName(room, zigId);
+    let cursed = null;
+    if (targetId && g.alive.has(targetId) && targetId !== zigId) {
+        g.zigeunerin_cursed = targetId;
+        const tname = playerName(room, targetId);
+        cursed = { id: targetId, name: tname };
+        addEvent(g, `Der Fluch der Zigeunerin trifft ${tname} — Verwandlung in einen Werwolf!`);
+        chronicleDay(g, `Rache-Fluch: ${tname} verwandelt sich in einen Werwolf.`);
+        g.reveals.push(`${tname} wurde von der Zigeunerin ${zigName} verflucht und zum Werwolf.`);
+        io.to(targetId).emit('zigeunerin-cursed-you', { zigeunerinName: zigName });
+        // Der Fluch ist öffentlich — auch die Bots wissen jetzt: das ist ein Wolf
+        room.players.filter(p => p.isBot && g.alive.has(p.id) && p.id !== targetId)
+            .forEach(p => memLearnWolf(g, p.id, targetId, MEM_IMPORTANCE.seerWolf));
+    } else {
+        addEvent(g, `Der Fluch der Zigeunerin verhallt ungenutzt.`);
+        chronicleDay(g, 'Der Rache-Fluch der Zigeunerin verhallte ungenutzt.');
+    }
+
+    io.to(code).emit('zigeunerin-curse-result', { zigeunerinName: zigName, cursed });
+    narratorPush(g, { phase: 'zigeunerin-curse', round: g.round, players: playerStatusList(room, g), events: g.events });
+
+    // Kurze Anzeige-Pause, dann ist der Abstimmungstag beendet. Es gibt nach
+    // der angeklagten Zigeunerin keine Wahl über weitere Angeklagte mehr.
+    g.curseTimer = setTimeout(() => {
+        if (room.game !== g) return;
+        g.curseTimer = null;
+        const deaths = g.zigeunerinDeaths ?? [];
+        g.zigeunerinDeaths = null;
+        const win = checkWinCondition(room);
+        if (win) { finishDay(code, room, {}); return; }
+        if (deaths.some(d => d.roleId === 'Jaeger')) { startDayHunterShot(code, room); return; }
+        finishDay(code, room);
+    }, cursed ? 6500 : 2500);
+}
+
+// ── Gendarm: darf am Tag vor der Abstimmung einmalig eingreifen ───────────────
+// Alle Spieler sehen eine neutrale Pause (verrät den Gendarm nicht); nur der
+// Gendarm bekommt die 5s-Abfrage. Zückt er die Waffe, wird er allen enthüllt.
+
+const GENDARM_OFFER_MS  = 5000;
+const GENDARM_CHOOSE_MS = 30000;
+
+function startGendarmWindow(code, room) {
+    const g = room.game;
+    const gendarmId = findPlayerByRole(room, 'Gendarm');
+    const canAct = gendarmId && g.alive.has(gendarmId) && !g.gendarm_used
+        && g.haendler_away !== gendarmId;
+    if (!canAct) { startDayVoting(code, room); return; }
+
+    g.phase = 'gendarm-window';
+    io.to(code).emit('phase-changed', { phase: 'gendarm-window', round: g.round });
+    narratorPush(g, { phase: 'gendarm-window', round: g.round, players: playerStatusList(room, g), events: g.events });
+
+    if (isBotPlayer(room, gendarmId)) {
+        addBotTimer(g, () => {
+            if (room.game !== g || g.phase !== 'gendarm-window') return;
+            const targetId = botGendarmDayTarget(room, g, gendarmId);
+            if (!targetId) { proceedAfterGendarm(code, room); return; }
+            g.phase = 'gendarm-shoot';
+            addEvent(g, `${playerName(room, gendarmId)} gibt sich als Gendarm zu erkennen und zückt die Waffe!`);
+            chronicleDay(g, `${playerName(room, gendarmId)} enthüllte sich als Gendarm.`);
+            io.to(code).emit('gendarm-reveal', { gendarmName: playerName(room, gendarmId) });
+            addBotTimer(g, () => {
+                if (room.game !== g || g.phase !== 'gendarm-shoot') return;
+                resolveGendarmShot(code, room, gendarmId, targetId);
+            }, 3000);
+        }, 1500 + Math.random() * 2000);
+        return;
+    }
+
+    io.to(gendarmId).emit('gendarm-offer', { countdown: 5 });
+    g.gendarmTimer = setTimeout(() => {
+        if (room.game === g && g.phase === 'gendarm-window') proceedAfterGendarm(code, room);
+    }, GENDARM_OFFER_MS + 1500);
+}
+
+function proceedAfterGendarm(code, room) {
+    const g = room.game;
+    if (g.gendarmTimer) { clearTimeout(g.gendarmTimer); g.gendarmTimer = null; }
+    if (g.phase !== 'gendarm-window' && g.phase !== 'gendarm-shoot') return;
+    // Erschossene Angeklagte stehen nicht mehr zur Wahl
+    g.dayAccused = g.dayAccused.filter(id => g.alive.has(id));
+    if (g.dayAccused.length === 0) { endDay(code, room, null, false); return; }
     startDayVoting(code, room);
+}
+
+// Der Gendarm hat „Ja" geklickt: Enthüllung an alle, dann Zielauswahl
+function startGendarmShoot(code, room, gendarmId) {
+    const g = room.game;
+    if (g.gendarmTimer) { clearTimeout(g.gendarmTimer); g.gendarmTimer = null; }
+    g.phase = 'gendarm-shoot';
+    const gendarmName = playerName(room, gendarmId);
+    addEvent(g, `${gendarmName} gibt sich als Gendarm zu erkennen und zückt die Waffe!`);
+    chronicleDay(g, `${gendarmName} enthüllte sich als Gendarm.`);
+    io.to(code).emit('gendarm-reveal', { gendarmName });
+    narratorPush(g, { phase: 'gendarm-shoot', round: g.round, players: playerStatusList(room, g), events: g.events });
+
+    io.to(gendarmId).emit('gendarm-choose', {
+        targets: [...g.alive]
+            .filter(id => id !== gendarmId && id !== g.haendler_away)
+            .map(id => ({ id, name: playerName(room, id) })),
+    });
+
+    g.gendarmTimer = setTimeout(() => {
+        if (room.game !== g || g.phase !== 'gendarm-shoot') return;
+        addEvent(g, `${gendarmName} steckt die Waffe wieder ein.`);
+        chronicleDay(g, `${gendarmName} steckte die Waffe wieder ein — kein Schuss.`);
+        io.to(code).emit('gendarm-result', { gendarmName, victim: null, gendarmDied: false, alsoDied: [] });
+        g.gendarmTimer = setTimeout(() => proceedAfterGendarm(code, room), 2500);
+    }, GENDARM_CHOOSE_MS);
+}
+
+function resolveGendarmShot(code, room, gendarmId, targetId) {
+    const g = room.game;
+    if (g.gendarmTimer) { clearTimeout(g.gendarmTimer); g.gendarmTimer = null; }
+    if (!targetId || !g.alive.has(targetId) || targetId === gendarmId || targetId === g.haendler_away) {
+        proceedAfterGendarm(code, room);
+        return;
+    }
+
+    g.gendarm_used = true;
+    const gendarmName = playerName(room, gendarmId);
+    const victimName  = playerName(room, targetId);
+    const wasWolf     = isWolf(room, targetId);
+    const victim = {
+        id: targetId, name: victimName, wasWolf,
+        roleId:   room.assignments[targetId],
+        roleName: roleName(room.assignments, targetId),
+    };
+
+    addEvent(g, `${gendarmName} (Gendarm) erschießt ${victimName} am helllichten Tag.`);
+    const deaths = applyDeath(code, room, targetId, `Du bist gestorben, weil der Gendarm ${gendarmName} dich erschossen hat.`);
+    let gendarmDied = false;
+    if (!wasWolf && g.alive.has(gendarmId)) {
+        gendarmDied = true;
+        addEvent(g, `${victimName} war unschuldig — ${gendarmName} richtet sich selbst.`);
+        deaths.push(...applyDeath(code, room, gendarmId, `Du bist gestorben, weil du als Gendarm den unschuldigen ${victimName} erschossen hast.`));
+    }
+    g.reveals.push(wasWolf
+        ? `${gendarmName} (Gendarm) erschoss am Tag ${victimName} — einen Werwolf.`
+        : `${gendarmName} (Gendarm) erschoss am Tag ${victimName} (unschuldig) und richtete sich selbst.`);
+    chronicleDay(g, wasWolf
+        ? `${gendarmName} (Gendarm) erschoss ${victimName} (${victim.roleName}) — Treffer, ein Werwolf!`
+        : `${gendarmName} (Gendarm) erschoss ${victimName} (${victim.roleName}) — unschuldig, der Gendarm richtete sich selbst.`);
+    g.dayAlsoDied.push(...deaths);
+
+    io.to(code).emit('gendarm-result', {
+        gendarmName, gendarmDied, victim,
+        alsoDied: deaths.filter(d => d.id !== targetId && d.id !== gendarmId)
+            .map(d => ({ name: d.name, roleName: d.roleName })),
+    });
+    narratorPush(g, { phase: 'gendarm-shoot', round: g.round, players: playerStatusList(room, g), events: g.events });
+
+    // Animations-Pause, dann geht der Tag weiter
+    g.gendarmTimer = setTimeout(() => {
+        if (room.game !== g) return;
+        g.gendarmTimer = null;
+        const win = checkWinCondition(room);
+        if (win) { endGame(code, room, win); return; }
+        if (deaths.some(d => d.roleId === 'Jaeger')) { startDayHunterShot(code, room); return; }
+        proceedAfterGendarm(code, room);
+    }, 7000);
+}
+
+// Bot-Gendarm: schießt nur auf sicher bekannte Wölfe (bzw. dumm mit Restrisiko)
+function botGendarmDayTarget(room, g, botId) {
+    const mem    = botMemoryOf(g, botId);
+    const bonded = botBondedIds(room, g, botId);
+    const candidates = [...g.alive].filter(id =>
+        id !== botId && id !== g.haendler_away && !bonded.has(id));
+    if (!candidates.length) return null;
+    if (botActsSmart(room)) {
+        const knownWolf = candidates.find(id => mem.knownWolves.has(id));
+        if (knownWolf && Math.random() < 0.8) return knownWolf;
+        return null; // kein sicheres Ziel → Waffe stecken lassen
+    }
+    return Math.random() < botPersona(room, botId).abilityChance * 0.3
+        ? pickRandom(candidates) : null;
 }
 
 function countDayVoters(room, g) {
@@ -2163,7 +2507,11 @@ function startDayVoting(code, room, runoff = false) {
     }
 
     const accused = g.dayAccused.map(id => ({ id, name: playerName(room, id), count: counts[id] ?? 0 }));
-    io.to(code).emit('phase-changed', { phase: 'day-voting', round: g.round, accused, runoff, awayPlayerId: g.haendler_away || null });
+    io.to(code).emit('phase-changed', {
+        phase: 'day-voting', round: g.round, accused, runoff,
+        awayPlayerId:   g.haendler_away || null,
+        awayPlayerName: g.haendler_away ? playerName(room, g.haendler_away) : null,
+    });
     narratorPush(g, { phase: 'day-voting', round: g.round, accused, runoff, players: playerStatusList(room, g), events: g.events, awayPlayerId: g.haendler_away || null });
 
     scheduleBotDayVotes(code, room);
@@ -2264,6 +2612,7 @@ function processDayVotes(code, room) {
         g.dayRunoff  = true;
         g.dayAccused = tied;
         addEvent(g, `Gleichstand — Stichwahl zwischen ${tied.map(id => playerName(room, id)).join(' und ')}.`);
+        chronicleDay(g, `Gleichstand — Stichwahl zwischen ${tied.map(id => playerName(room, id)).join(' und ')}.`);
         startDayVoting(code, room, true);
         return;
     }
@@ -2280,13 +2629,17 @@ function processDayVotes(code, room) {
         narrSurvived = true;
         g.dayNarrInfo = { id: narrId, name: playerName(room, narrId), roleId: 'Narr', roleName: 'Narr' };
         addEvent(g, `${playerName(room, narrId)} (Narr) überlebt — Narrenfreiheit.`);
+        chronicleDay(g, `${playerName(room, narrId)} wurde gewählt, überlebt aber als Narr (Narrenfreiheit).`);
         eliminated = null;
     } else if (eliminated) {
         addEvent(g, `${playerName(room, eliminated)} wurde vom Dorf eliminiert.`);
+        chronicleDay(g, `Das Dorf eliminierte ${playerName(room, eliminated)} (${roleName(room.assignments, eliminated)}).`);
     } else if (g.dayRunoff) {
         addEvent(g, 'Auch die Stichwahl endet unentschieden — niemand wird eliminiert.');
+        chronicleDay(g, 'Auch die Stichwahl endete unentschieden — niemand wurde eliminiert.');
     } else {
         addEvent(g, 'Unentschieden — niemand wird eliminiert.');
+        chronicleDay(g, 'Unentschieden — niemand wurde eliminiert.');
     }
 
     // Bots werten das aufgedeckte Ergebnis aus: Wähler eines Unschuldigen werden
@@ -2324,6 +2677,7 @@ function endGame(code, room, win) {
                 isLover:  g.lovers?.includes(p.id) ?? false,
             })),
         notes: g.reveals,
+        chronicle: g.chronicle,
     };
 
     // Payload merken, damit Reconnects nach Spielende den Endscreen wiederbekommen
@@ -2362,11 +2716,13 @@ function resolveDayHunterShot(code, room, targetId) {
     if (targetId && g.alive.has(targetId) && targetId !== g.haendler_away) {
         const jaegerId = findPlayerByRole(room, 'Jaeger');
         addEvent(g, `${playerName(room, jaegerId)} (Jäger) erschoss ${playerName(room, targetId)}.`);
-        const deaths = applyDeath(code, room, targetId);
+        chronicleDay(g, `${playerName(room, jaegerId)} (Jäger) riss ${playerName(room, targetId)} (${roleName(room.assignments, targetId)}) mit in den Tod.`);
+        const deaths = applyDeath(code, room, targetId, 'Du bist durch den letzten Schuss des Jägers gestorben.');
         shotInfo = deaths[0] ?? null;
         g.dayAlsoDied.push(...deaths.slice(1));
     } else {
         addEvent(g, 'Der Jäger hat nicht geschossen.');
+        chronicleDay(g, 'Der Jäger schoss nicht.');
     }
     finishDay(code, room, { hunterShot: shotInfo });
 }
@@ -2423,7 +2779,7 @@ function endDay(code, room, eliminatedId, skipped, narrSurvived = false) {
             roleName: roleName(room.assignments, eliminatedId),
         };
         // applyDeath handles the lover cascade and role transforms
-        const deaths = applyDeath(code, room, eliminatedId);
+        const deaths = applyDeath(code, room, eliminatedId, 'Du bist gestorben, weil das Dorf dich bei der Abstimmung eliminiert hat.');
         g.dayAlsoDied.push(...deaths.filter(d => d.id !== eliminatedId));
 
         // Jäger shoots before win is checked — their shot could kill a wolf and reverse the outcome.
@@ -2448,7 +2804,7 @@ function handleGameLeave(code, room, playerId) {
 
     if (g.alive.has(playerId)) {
         addEvent(g, `${playerName(room, playerId)} hat das Spiel verlassen.`);
-        applyDeath(code, room, playerId);
+        applyDeath(code, room, playerId, 'Du bist gestorben, weil du das laufende Spiel verlassen hast.');
 
         // Drop their pending inputs
         if (g.dayNominations) delete g.dayNominations[playerId];
@@ -2485,6 +2841,15 @@ function handleGameLeave(code, room, playerId) {
         checkDayNominationsComplete(code, room);
     } else if (g.phase === 'day-voting') {
         checkDayVotesComplete(code, room);
+    } else if (g.phase === 'day-prep' && g.autoMode && g.round === 1) {
+        // Nicht ewig auf die Karten-Bestätigung eines Gegangenen warten
+        pushCardConfirmState(code, room);
+    } else if ((g.phase === 'gendarm-window' || g.phase === 'gendarm-shoot')
+               && room.assignments[playerId] === 'Gendarm') {
+        proceedAfterGendarm(code, room);
+    } else if (g.phase === 'zigeunerin-curse'
+               && room.assignments[playerId] === 'Zigeunerin') {
+        resolveZigeunerinCurse(code, room, playerId, null);
     }
 
     if (room.game === g && g.phase !== 'game-over') {
@@ -2548,6 +2913,60 @@ io.on('connection', (socket) => {
         pushCurrentGameState(roomCode, room, socket);
     });
 
+    // ─ Gendarm: Tag-Eingriff vor der Abstimmung ─────────────────────────────
+    socket.on('gendarm-decline', () => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { code, room } = ctx;
+        const g = room.game;
+        if (!g || g.phase !== 'gendarm-window') return;
+        if (findPlayerByRole(room, 'Gendarm') !== socket.id) return;
+        proceedAfterGendarm(code, room);
+    });
+
+    socket.on('gendarm-accept', () => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { code, room } = ctx;
+        const g = room.game;
+        if (!g || g.phase !== 'gendarm-window' || g.gendarm_used) return;
+        if (findPlayerByRole(room, 'Gendarm') !== socket.id) return;
+        startGendarmShoot(code, room, socket.id);
+    });
+
+    socket.on('gendarm-shoot', ({ targetId }) => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { code, room } = ctx;
+        const g = room.game;
+        if (!g || g.phase !== 'gendarm-shoot' || g.gendarm_used) return;
+        if (findPlayerByRole(room, 'Gendarm') !== socket.id) return;
+        resolveGendarmShot(code, room, socket.id, targetId);
+    });
+
+    // ─ Zigeunerin: öffentlicher Rache-Fluch nach ihrem Anklage-Tod ──────────
+    socket.on('zigeunerin-curse', ({ targetId }) => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { code, room } = ctx;
+        const g = room.game;
+        if (!g || g.phase !== 'zigeunerin-curse') return;
+        if (findPlayerByRole(room, 'Zigeunerin') !== socket.id) return;
+        resolveZigeunerinCurse(code, room, socket.id, targetId);
+    });
+
+    // Auto-Modus: Spieler bestätigt vor der ersten Nacht, dass er seine Karte gesehen hat
+    socket.on('confirm-card-seen', () => {
+        const ctx = findRoomBySocket(socket.id);
+        if (!ctx) return;
+        const { code, room, player } = ctx;
+        const g = room.game;
+        if (!g || !g.autoMode || g.phase !== 'day-prep' || g.round !== 1) return;
+        if (player.isBot || player.id === g.narratorId) return;
+        g.cardConfirms.add(player.id);
+        pushCardConfirmState(code, room);
+    });
+
     socket.on('toggle-card', ({ cardId }) => {
         const ctx = findRoomBySocket(socket.id);
         if (!ctx || ctx.room.hostId !== socket.id) return;
@@ -2606,12 +3025,22 @@ io.on('connection', (socket) => {
         if (!room.selectedCards.some(id => WOLF_IDS.has(id))) { socket.emit('error', { message: 'Mindestens 1 Werwolf muss ausgewählt sein.' }); return; }
         if (!room.players.every(p => p.isHost || p.isReady)) { socket.emit('error', { message: 'Noch nicht alle Spieler sind bereit.' }); return; }
 
-        // Fehlende Karten mit Dorfbewohnern auffüllen
+        // Fehlende Karten mit Dorfbewohnern auffüllen — mit Dieb im Pool
+        // werden 2 zusätzliche Karten benötigt (seine Wahlkarten)
+        const withDieb    = room.selectedCards.includes('Dieb');
+        const poolTarget  = n + (withDieb ? 2 : 0);
         const paddedCards = [...room.selectedCards];
-        while (paddedCards.length < n) paddedCards.push('Dorfbewohner');
+        while (paddedCards.length < poolTarget) paddedCards.push('Dorfbewohner');
 
         const picked = pickBalanced(paddedCards, n);
         if (typeof picked === 'string')        { socket.emit('error', { message: picked }); return; }
+
+        // Dieb wurde ausgewählt → er muss auch wirklich ausgeteilt werden
+        // (nicht in den 2 übrigen Wahlkarten landen)
+        if (withDieb && !picked.includes('Dieb')) {
+            const swapIdx = picked.findIndex(id => !WOLF_IDS.has(id));
+            if (swapIdx !== -1) picked[swapIdx] = 'Dieb';
+        }
 
         // Assign cards — narrator (host or designated) gets no card
         const pool = [...picked];
@@ -2631,12 +3060,13 @@ io.on('connection', (socket) => {
         room.assignments = assignments;
         room.game        = freshGameState(room, narratorPlayerId, assignments);
 
-        // Dieb: generate 2 extra role options from unassigned roles
+        // Dieb: seine 2 Wahlkarten sind die übrigen Karten aus dem Pool (nie
+        // Wölfe — die gehen immer an Spieler); reicht der Rest nicht, wird
+        // mit Dorfbewohnern aufgefüllt
         const diebId = Object.entries(assignments).find(([, rid]) => rid === 'Dieb')?.[0];
         if (diebId) {
-            const assignedRoles = new Set(Object.values(assignments));
-            const candidates    = Object.keys(ROLE_NAMES).filter(r => !assignedRoles.has(r));
-            room.game.diebOptions = shuffle(candidates).slice(0, Math.min(2, candidates.length));
+            room.game.diebOptions = buildDiebOptions(paddedCards, assignments);
+            room.game.reveals.push(`Der Dieb hatte zur Wahl: ${room.game.diebOptions.map(r => ROLE_NAMES[r] ?? r).join(' und ')}.`);
         }
 
         addEvent(room.game, 'Spiel gestartet.');
@@ -2656,14 +3086,13 @@ io.on('connection', (socket) => {
             });
         }
 
-        // Auto mode: trigger first night automatically after players have loaded
+        // Auto mode: erste Nacht startet erst, wenn alle menschlichen Spieler
+        // ihre Karte bestätigt haben. Der Broadcast hier ist nur ein Anstoß —
+        // jeder Client bekommt den Stand zusätzlich beim Resume der Spielseite.
         if (!narratorPlayerId) {
             setTimeout(() => {
                 if (!room.game || room.game.phase !== 'day-prep') return;
-                io.to(code).emit('auto-day-starting', { countdown: 5, label: 'Nacht beginnt in' });
-                room.game.autoTimer = setTimeout(() => {
-                    if (room.game?.phase === 'day-prep') startNight(code, room);
-                }, 5000);
+                pushCardConfirmState(code, room);
             }, 3000);
         }
     });
@@ -2679,12 +3108,20 @@ io.on('connection', (socket) => {
         const n = room.players.length - (effectiveNarratorMode ? 1 : 0);
         if (n < 3) { socket.emit('error', { message: 'Mindestens 3 Mitspieler (ohne Erzähler) werden benötigt.' }); return; }
 
-        // Fehlende Karten mit Dorfbewohnern auffüllen
+        // Fehlende Karten mit Dorfbewohnern auffüllen — mit Dieb im Pool
+        // werden 2 zusätzliche Karten benötigt (seine Wahlkarten)
+        const withDieb    = room.selectedCards.includes('Dieb');
+        const poolTarget  = n + (withDieb ? 2 : 0);
         const paddedCards = [...room.selectedCards];
-        while (paddedCards.length < n) paddedCards.push('Dorfbewohner');
+        while (paddedCards.length < poolTarget) paddedCards.push('Dorfbewohner');
 
         const picked = pickBalanced(paddedCards, n);
         if (typeof picked === 'string') { socket.emit('error', { message: picked }); return; }
+
+        if (withDieb && !picked.includes('Dieb')) {
+            const swapIdx = picked.findIndex(id => !WOLF_IDS.has(id));
+            if (swapIdx !== -1) picked[swapIdx] = 'Dieb';
+        }
 
         const pool = [...picked];
         shuffle(pool);
@@ -2697,12 +3134,11 @@ io.on('connection', (socket) => {
         room.assignments = assignments;
         room.game        = freshGameState(room, narratorPlayerId, assignments);
 
-        // Dieb: generate 2 extra role options from unassigned roles
+        // Dieb: seine 2 Wahlkarten sind die übrigen Karten aus dem Pool
         const diebIdR = Object.entries(assignments).find(([, rid]) => rid === 'Dieb')?.[0];
         if (diebIdR) {
-            const assignedRolesR = new Set(Object.values(assignments));
-            const candidatesR    = Object.keys(ROLE_NAMES).filter(r => !assignedRolesR.has(r));
-            room.game.diebOptions = shuffle(candidatesR).slice(0, Math.min(2, candidatesR.length));
+            room.game.diebOptions = buildDiebOptions(paddedCards, assignments);
+            room.game.reveals.push(`Der Dieb hatte zur Wahl: ${room.game.diebOptions.map(r => ROLE_NAMES[r] ?? r).join(' und ')}.`);
         }
 
         addEvent(room.game, 'Spiel neugestartet.');
@@ -2723,10 +3159,7 @@ io.on('connection', (socket) => {
         if (!narratorPlayerId) {
             setTimeout(() => {
                 if (!room.game || room.game.phase !== 'day-prep') return;
-                io.to(code).emit('auto-day-starting', { countdown: 5, label: 'Nacht beginnt in' });
-                room.game.autoTimer = setTimeout(() => {
-                    if (room.game?.phase === 'day-prep') startNight(code, room);
-                }, 5000);
+                pushCardConfirmState(code, room);
             }, 3000);
         }
     });
@@ -3070,10 +3503,15 @@ io.on('connection', (socket) => {
                 setTimeout(() => {
                     if (!room.game) return;
                     if (g.phase === 'day-prep') {
-                        io.to(code).emit('auto-day-starting', { countdown: 5 });
-                        g.autoTimer = setTimeout(() => {
-                            if (room.game?.phase === 'day-prep') startNight(code, room);
-                        }, 5000);
+                        if (g.round === 1) {
+                            // Vor der ersten Nacht: erst alle Karten-Bestätigungen einsammeln
+                            pushCardConfirmState(code, room);
+                        } else {
+                            io.to(code).emit('auto-day-starting', { countdown: 5 });
+                            g.autoTimer = setTimeout(() => {
+                                if (room.game?.phase === 'day-prep') startNight(code, room);
+                            }, 5000);
+                        }
                     } else if (g.phase === 'night') {
                         const entry = g.nightQueue[g.nightIdx];
                         if (entry && !entry.done) {

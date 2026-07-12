@@ -1,4 +1,4 @@
-import { ROLES, DESCRIPTIONS, FACTION_LABEL } from '/js/roles.js';
+import { ROLES, DESCRIPTIONS, FACTION_LABEL } from '/js/roles.js?v=2';
 import { initVoice } from '/js/voice.js';
 import { makeDraggable } from '/js/draggable.js';
 import { initTutorial } from '/js/tutorial.js';
@@ -59,6 +59,11 @@ flipBtn.addEventListener('click', () => {
     document.title       = hiding
         ? 'Deine Rolle – Werwolf'
         : `${role?.name ?? ''} – Werwolf`;
+
+    if (!hiding && !hasSeenCard) {
+        hasSeenCard = true;
+        updateCardConfirmButton();
+    }
 });
 
 // ── Info modal ────────────────────────────────────────────────────────────────
@@ -112,6 +117,7 @@ const goRestartNewBtn      = document.getElementById('go-restart-new-btn');
 const cardScene      = document.getElementById('card-scene');
 const spectatorPanel = document.getElementById('spectator-panel');
 const spectatorLog   = document.getElementById('spectator-log');
+const deathReason     = document.getElementById('death-reason');
 let isDead = false;
 
 function setDead() {
@@ -121,6 +127,7 @@ function setDead() {
     spectatorPanel.hidden = false;
     dayPanel.hidden = true;
     nightOverlay.hidden = true;
+    cardConfirmPanel.hidden = true;
     socket.emit('join-spectator');
 }
 
@@ -587,9 +594,14 @@ socket.on('night-turn-done', () => {
 });
 
 // Phase transitions
-socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, narrInfo, alsoDied, voteResult }) => {
+const dayAwayNote = document.getElementById('day-away-note');
+
+socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, eliminated, skipped, hunterShot, hunterName, awayPlayerId, narrSurvived, narrInfo, alsoDied, voteResult, gendarmName, zigeunerinName, awayPlayerName }) => {
     gchatOnPhase(phase);
     viewingResult = false;
+    // Gendarm-/Fluch-Overlays gelten nur innerhalb ihrer Phase
+    if (phase !== 'gendarm-window' && phase !== 'gendarm-shoot') hideGendarmOverlay();
+    if (phase !== 'zigeunerin-curse') hideCurseOverlay();
     // Namensliste der Anklagen/Stimmen gilt nur innerhalb einer Phase —
     // im Tages-Ergebnis bleibt sie sichtbar, damit man nachlesen kann, wer wen gewählt hat
     if (['day-accusation', 'day-voting', 'night'].includes(phase)) clearLiveVotes();
@@ -598,9 +610,19 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
     if (players) dayAlive = players.some(p => p.id === currentPlayerId);
     // Day / night atmosphere
     const nightPhases = ['night'];
-    const dayPhases   = ['night-summary','day-prep','day-accusation','day-voting','hunter-day-shot','day-result'];
+    const dayPhases   = ['night-summary','day-prep','day-accusation','day-voting','hunter-day-shot','day-result','gendarm-window','gendarm-shoot','zigeunerin-curse'];
     document.body.classList.toggle('is-night', nightPhases.includes(phase));
     document.body.classList.toggle('is-day',   dayPhases.includes(phase));
+
+    // Einkaufs-Hinweis: für alle sichtbar, wer diese Runde aussetzt
+    if ((phase === 'day-accusation' || phase === 'day-voting')
+        && awayPlayerId && awayPlayerId !== currentPlayerId) {
+        const awayName = awayPlayerName ?? players?.find(p => p.id === awayPlayerId)?.name ?? 'Jemand';
+        dayAwayNote.textContent = `🛒 ${awayName} ist einkaufen und setzt diese Runde aus.`;
+        dayAwayNote.hidden = false;
+    } else {
+        dayAwayNote.hidden = true;
+    }
 
     if (phase === 'night') {
         morningOverlay.hidden = true;
@@ -636,6 +658,28 @@ socket.on('phase-changed', ({ phase, players, maxAccusations, accused, runoff, e
     }
     if (phase === 'day-voting' && accused) {
         if (dayAlive && awayPlayerId !== currentPlayerId && currentCardId !== 'Narr') showDayVoting(accused, runoff);
+    }
+    if (phase === 'gendarm-window') {
+        // Neutrale Pause vor der Abstimmung — der Gendarm bekommt separat sein Angebot
+        morningOverlay.hidden = true;
+        hideLynchReveal();
+        if (dayAlive && !isDead) {
+            dayPanel.hidden = false;
+            dayAccusationUi.hidden = true;
+            dayVotingUi.hidden = true;
+            dayWaitUi.hidden = false;
+            dayWaitText.textContent = 'Das Dorf sammelt sich zur Abstimmung…';
+        }
+    }
+    if (phase === 'gendarm-shoot' && gendarmName) {
+        // Reload mitten in der Gendarm-Enthüllung
+        showGendarmReveal(gendarmName);
+    }
+    if (phase === 'zigeunerin-curse') {
+        morningOverlay.hidden = true;
+        hideLynchReveal();
+        dayPanel.hidden = true;
+        showCurseWaiting(zigeunerinName ?? 'Die Zigeunerin');
     }
     if (phase === 'hunter-day-shot') {
         // All day-alive players see a wait message; the Jäger gets hunter-shoot separately
@@ -1031,6 +1075,190 @@ socket.on('hunter-shoot', ({ targets }) => {
     hunterOverlay.hidden = false;
 });
 
+// ── Gendarm: Tag-Eingriff vor der Abstimmung ─────────────────────────────────
+const gendarmOverlay      = document.getElementById('gendarm-overlay');
+const gendarmOfferBox     = document.getElementById('gendarm-offer');
+const gendarmOfferTimer   = document.getElementById('gendarm-offer-timer');
+const gendarmRevealBox    = document.getElementById('gendarm-reveal');
+const gendarmRevealName   = document.getElementById('gendarm-reveal-name');
+const gendarmRevealStatus = document.getElementById('gendarm-reveal-status');
+const gendarmTargetList   = document.getElementById('gendarm-target-list');
+const gendarmShootBtn     = document.getElementById('gendarm-shoot-btn');
+const gendarmResultBox    = document.getElementById('gendarm-result');
+const gendarmResultEyebrow = document.getElementById('gendarm-result-eyebrow');
+const gendarmResultCard   = document.getElementById('gendarm-result-card');
+const gendarmResultText   = document.getElementById('gendarm-result-text');
+let gendarmOfferInterval  = null;
+let gendarmSelectedId     = null;
+
+function hideGendarmOverlay() {
+    gendarmOverlay.hidden   = true;
+    gendarmOfferBox.hidden  = true;
+    gendarmRevealBox.hidden = true;
+    gendarmResultBox.hidden = true;
+    if (gendarmOfferInterval) { clearInterval(gendarmOfferInterval); gendarmOfferInterval = null; }
+}
+
+// Nur der Gendarm bekommt dieses Angebot — 5s Bedenkzeit
+socket.on('gendarm-offer', ({ countdown }) => {
+    if (isDead) return;
+    vibrate();
+    hideGendarmOverlay();
+    gendarmOverlay.hidden  = false;
+    gendarmOfferBox.hidden = false;
+    let remaining = countdown ?? 5;
+    gendarmOfferTimer.textContent = remaining;
+    gendarmOfferInterval = setInterval(() => {
+        remaining--;
+        gendarmOfferTimer.textContent = Math.max(remaining, 0);
+        if (remaining <= 0) {
+            clearInterval(gendarmOfferInterval);
+            gendarmOfferInterval = null;
+            hideGendarmOverlay(); // Server macht ohne Antwort automatisch weiter
+        }
+    }, 1000);
+});
+
+document.getElementById('gendarm-yes').addEventListener('click', () => {
+    socket.emit('gendarm-accept');
+    gendarmOfferBox.hidden = true; // Enthüllung folgt als Broadcast an alle
+    if (gendarmOfferInterval) { clearInterval(gendarmOfferInterval); gendarmOfferInterval = null; }
+});
+document.getElementById('gendarm-no').addEventListener('click', () => {
+    socket.emit('gendarm-decline');
+    hideGendarmOverlay();
+});
+
+// Alle Spieler: der Gendarm hat sich zu erkennen gegeben
+function showGendarmReveal(name) {
+    hideGendarmOverlay();
+    gendarmOverlay.hidden      = false;
+    gendarmRevealBox.hidden    = false;
+    gendarmRevealName.textContent = name;
+    gendarmRevealStatus.hidden = false;
+    gendarmTargetList.hidden   = true;
+    gendarmShootBtn.hidden     = true;
+}
+
+socket.on('gendarm-reveal', ({ gendarmName }) => {
+    vibrate();
+    showGendarmReveal(gendarmName);
+});
+
+// Nur der Gendarm: Zielauswahl in der Enthüllungs-Ansicht
+socket.on('gendarm-choose', ({ targets }) => {
+    gendarmOverlay.hidden      = false;
+    gendarmRevealBox.hidden    = false;
+    gendarmRevealStatus.hidden = true;
+    gendarmSelectedId          = null;
+    gendarmShootBtn.hidden     = true;
+    buildTargetButtons(gendarmTargetList, targets, (p, btn) => {
+        gendarmTargetList.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
+        btn.classList.add('is-selected');
+        gendarmSelectedId = p.id;
+        gendarmShootBtn.hidden = false;
+    });
+    gendarmTargetList.hidden = false;
+    gendarmShootBtn.onclick = () => {
+        if (!gendarmSelectedId) return;
+        socket.emit('gendarm-shoot', { targetId: gendarmSelectedId });
+        gendarmTargetList.hidden = true;
+        gendarmShootBtn.hidden   = true;
+    };
+});
+
+// Alle Spieler: Ergebnis des Schusses (Karte des Opfers wird aufgedeckt)
+socket.on('gendarm-result', ({ gendarmName, gendarmDied, victim, alsoDied }) => {
+    hideGendarmOverlay();
+    gendarmOverlay.hidden   = false;
+    gendarmResultBox.hidden = false;
+
+    if (!victim) {
+        gendarmResultEyebrow.textContent = `${gendarmName} steckt die Waffe wieder ein.`;
+        gendarmResultCard.innerHTML  = '';
+        gendarmResultText.textContent = 'Niemand wurde erschossen.';
+        return;
+    }
+
+    const r = ROLES.find(x => x.id === victim.roleId);
+    gendarmResultEyebrow.textContent = `${gendarmName} erschießt ${victim.name}!`;
+    gendarmResultCard.innerHTML = r
+        ? `<img src="/assets/${r.image}" alt="${esc(victim.roleName)}">` : '';
+    let text = victim.wasWolf
+        ? `${victim.name} war ein Werwolf! 🎯`
+        : `${victim.name} (${victim.roleName}) war unschuldig… ${gendarmName} richtet sich selbst. ☠`;
+    if (alsoDied?.length) text += ` Mitgestorben: ${alsoDied.map(d => d.name).join(', ')}.`;
+    gendarmResultText.textContent = text;
+});
+
+// ── Zigeunerin: öffentlicher Rache-Fluch nach ihrem Anklage-Tod ──────────────
+const curseOverlay    = document.getElementById('curse-overlay');
+const curseText       = document.getElementById('curse-text');
+const curseTargetList = document.getElementById('curse-target-list');
+const curseConfirmBtn = document.getElementById('curse-confirm-btn');
+let curseSelectedId = null;
+let iWasCursed      = false;
+
+function hideCurseOverlay() {
+    curseOverlay.hidden    = true;
+    curseTargetList.hidden = true;
+    curseConfirmBtn.hidden = true;
+    curseOverlay.classList.remove('is-struck');
+}
+
+function showCurseWaiting(name) {
+    curseOverlay.hidden    = false;
+    curseTargetList.hidden = true;
+    curseConfirmBtn.hidden = true;
+    curseText.textContent  = `${name} wurde angeklagt und stirbt — mit letzter Kraft spricht sie ihren Rache-Fluch…`;
+}
+
+// Nur die (tote) Zigeunerin: Zielauswahl für den Fluch
+socket.on('zigeunerin-curse-choose', ({ targets }) => {
+    vibrate();
+    curseOverlay.hidden = false;
+    curseText.textContent = 'Du stirbst — doch dein Fluch trifft noch einen. Wen verwandelst du in einen Werwolf?';
+    curseSelectedId = null;
+    curseConfirmBtn.hidden = true;
+    buildTargetButtons(curseTargetList, targets, (p, btn) => {
+        curseTargetList.querySelectorAll('.target-btn').forEach(b => b.classList.remove('is-selected'));
+        btn.classList.add('is-selected');
+        curseSelectedId = p.id;
+        curseConfirmBtn.hidden = false;
+    });
+    curseTargetList.hidden = false;
+    curseConfirmBtn.onclick = () => {
+        if (!curseSelectedId) return;
+        socket.emit('zigeunerin-curse', { targetId: curseSelectedId });
+        curseTargetList.hidden = true;
+        curseConfirmBtn.hidden = true;
+    };
+});
+
+// Ich wurde verflucht → ab jetzt Werwolf (Rudel-Chat freischalten)
+socket.on('zigeunerin-cursed-you', () => {
+    iWasCursed = true;
+    gchatBecomeWolf();
+    roleFaction.textContent = 'Werwolf';
+    roleFaction.hidden = false;
+});
+
+// Alle Spieler: das Ergebnis des Fluchs
+socket.on('zigeunerin-curse-result', ({ zigeunerinName, cursed }) => {
+    curseOverlay.hidden    = false;
+    curseTargetList.hidden = true;
+    curseConfirmBtn.hidden = true;
+    if (!cursed) {
+        curseText.textContent = `Der Fluch der Zigeunerin ${zigeunerinName} verhallt ungenutzt.`;
+        return;
+    }
+    const isMe = cursed.id === currentPlayerId || iWasCursed;
+    curseOverlay.classList.add('is-struck');
+    curseText.innerHTML =
+        `Der Fluch trifft <strong>${esc(cursed.name)}</strong> — Verwandlung in einen Werwolf! &#x1F43A;`
+        + (isMe ? '<br><strong>Das bist du — du gehörst jetzt zum Rudel!</strong>' : '');
+});
+
 // Narrator advances: reveal dead cards
 socket.on('morning-reveal', ({ deaths }) => {
     if (deaths.some(d => d.id === currentPlayerId)) setDead();
@@ -1211,7 +1439,21 @@ socket.on('you-are-katz-maus', ({ role, partnerName }) => {
 });
 
 // Dead player: server confirms we're a spectator (on reconnect)
-socket.on('you-are-dead', () => setDead());
+socket.on('you-are-dead', ({ reason } = {}) => {
+    setDead();
+    if (reason) {
+        deathReason.textContent = reason;
+        deathReason.hidden = false;
+    }
+});
+
+socket.on('witch-potions-refilled', () => {
+    const toast = document.getElementById('baer-toast');
+    toast.textContent = '🛒 Beim Einkauf hast du deinen Heil- und Gifttrank wieder aufgefüllt.';
+    toast.hidden = false;
+    clearTimeout(baerToastTimer);
+    baerToastTimer = setTimeout(() => { toast.hidden = true; }, 6000);
+});
 
 // Geisterblick: narrator-update wird toten Spielern vom Server weitergeleitet.
 // Sie sehen Spielstatus, alle Rollen offen und das Ereignisprotokoll.
@@ -1227,6 +1469,9 @@ const SPECTATOR_PHASE_LABELS = {
     'day-accusation':    'Tag — Anklage-Phase läuft',
     'day-voting':        'Tag — das Dorf stimmt ab',
     'day-result':        'Tag — Ergebnis steht fest',
+    'gendarm-window':    'Tag — das Dorf sammelt sich zur Abstimmung',
+    'gendarm-shoot':     'Der Gendarm greift ein!',
+    'zigeunerin-curse':  'Die Zigeunerin spricht ihren Rache-Fluch…',
     'game-over':         'Das Spiel ist vorbei',
 };
 
@@ -1306,7 +1551,54 @@ socket.on('auto-mode-activated', () => {
     autoModeBanner.hidden = false;
 });
 
+// ── Karten-Bestätigung vor der ersten Nacht (Auto-Modus) ─────────────────────
+const cardConfirmPanel   = document.getElementById('card-confirm-panel');
+const cardConfirmBtn     = document.getElementById('card-confirm-btn');
+const cardConfirmHint    = document.getElementById('card-confirm-hint');
+const cardConfirmWaiting = document.getElementById('card-confirm-waiting');
+
+let hasSeenCard    = false; // Karte mindestens einmal aufgedeckt
+let cardConfirmed  = false; // Bestätigung wurde abgeschickt
+
+function updateCardConfirmButton() {
+    cardConfirmBtn.disabled = cardConfirmed || !hasSeenCard;
+    cardConfirmHint.textContent = hasSeenCard
+        ? 'Bestätige, dass du deine Karte gesehen hast.'
+        : 'Schau dir deine Karte an und bestätige dann, dass du sie gesehen hast.';
+}
+
+cardConfirmBtn.addEventListener('click', () => {
+    if (!hasSeenCard || cardConfirmed) return;
+    cardConfirmed = true;
+    socket.emit('confirm-card-seen');
+    updateCardConfirmButton();
+});
+
+socket.on('card-confirm-update', ({ pending }) => {
+    if (isDead || !pending || pending.length === 0) {
+        cardConfirmPanel.hidden = true;
+        return;
+    }
+
+    const iAmPending = pending.some(p => p.id === currentPlayerId);
+    const others     = pending.filter(p => p.id !== currentPlayerId).map(p => p.name);
+
+    cardConfirmPanel.hidden = false;
+    cardConfirmBtn.hidden   = !iAmPending;
+    cardConfirmHint.hidden  = !iAmPending;
+    if (iAmPending) {
+        cardConfirmed = false; // Server führt uns noch als ausstehend
+        updateCardConfirmButton();
+    }
+
+    cardConfirmWaiting.hidden = others.length === 0;
+    cardConfirmWaiting.textContent = others.length > 0
+        ? `Warten auf: ${others.join(', ')}`
+        : '';
+});
+
 socket.on('auto-day-starting', ({ countdown, label }) => {
+    cardConfirmPanel.hidden = true;
     document.getElementById('auto-day-label').textContent = label ?? 'Tag beginnt in';
     autoDayNumber.textContent = countdown;
     autoDayCountdown.hidden   = false;
@@ -1373,7 +1665,28 @@ function renderGameOverReveal(reveal) {
     revealNotes.innerHTML = (reveal.notes ?? []).map(n => `<li>${esc(n)}</li>`).join('');
     revealNotes.hidden = !(reveal.notes?.length > 0);
     revealBox.hidden = false;
+
+    // Spielbericht: kompletter Verlauf aller Nächte und Tage im Modal
+    const reportBtn  = document.getElementById('go-report-btn');
+    const chronicle  = reveal.chronicle ?? [];
+    reportBtn.hidden = chronicle.length === 0;
+    reportBtn.onclick = () => {
+        let html = '', lastSection = null;
+        for (const entry of chronicle) {
+            if (entry.section !== lastSection) {
+                html += `<p class="report-log__section">${esc(entry.section)}</p>`;
+                lastSection = entry.section;
+            }
+            html += `<p class="report-log__line">${esc(entry.text)}</p>`;
+        }
+        document.getElementById('report-log').innerHTML = html;
+        reportModal.showModal();
+    };
 }
+
+const reportModal = document.getElementById('report-modal');
+document.getElementById('report-modal-close').addEventListener('click', () => reportModal.close());
+reportModal.addEventListener('click', (e) => { if (e.target === reportModal) reportModal.close(); });
 
 socket.on('game-over', ({ winner, message, hostId, reveal }) => {
     hideOverlay();

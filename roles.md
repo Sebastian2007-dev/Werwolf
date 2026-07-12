@@ -16,7 +16,7 @@ Legende:
 
 (D) Amor: (Amor kann ein Liebespaar auswählen, das als letzte 4 Personen alleine da sein wollen stirbt einer der liebenden stirbt der andere auch.)
 
-(N) Dieb: (Der Dieb kriegt zwei Karten und darf sich eine auswählen. Die Rolle übernimmt er)
+(N) Dieb: (Der Dieb kriegt in der ersten Nacht die zwei übrigen Karten aus dem Kartenpool und darf sich eine auswählen — oder Dieb bleiben. Ist der Dieb im Spiel, kommen 2 zusätzliche Karten in den Pool; fehlen welche, wird mit Dorfbewohnern aufgefüllt. Werwolf-Karten landen nie bei den Dieb-Karten.)
 
 (D) Seherin: (Die Seherin darf sich jede Runde eine Karte eines Mitspielers ansehen.)
 
@@ -42,9 +42,9 @@ Legende:
 
 (D) Der Bär: (Der Bär hat einen guten Geruchssinn, sitzt der Bär neben einem Werwolf, brummt der Spielleiter am Anfang der Tages Runde.)
 
-(D/W) Jack the Ripper: Schläft die Dorfmatratze bei Jack stirbt sie. Jede Nacht wählt Jack eine Person. Schläft die Dorfmatratze dort wird sie (die Dorfmatratze) getötet und Jack mutiert zum Werwolf. 
+(D/W) Jack the Ripper: Jack hat keine eigene Aktion. Schläft die Dorfmatratze bei Jack, tötet er sie und mutiert zum Werwolf. Mehr nicht.
 
-Gendarm: der Gendarm darf einmalig eine Person töten (wenn es eine unschuldige Person ist, so bringt er sich selbst ebenfalls um)
+(D) Gendarm: der Gendarm darf einmalig am Tag vor der Abstimmung eine Person erschießen. Dabei gibt er sich dem ganzen Dorf als Gendarm zu erkennen. Ist es eine unschuldige Person, richtet er sich selbst ebenfalls.
 
-Die Zigeunerin: die Zigeunerin stirbt automatisch, wenn sie angeklagt wird.
-Sie darf während der darauffolgenden Werwolfrunde einen weiteren Werwolf auswählen/verfluchen
+(N) Die Zigeunerin: die Zigeunerin stirbt automatisch, sobald sie angeklagt wird.
+Als Rache verflucht sie direkt danach öffentlich (alle sehen es) eine beliebige Person — diese verwandelt sich in einen Werwolf.

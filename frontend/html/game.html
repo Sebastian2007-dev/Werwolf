@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Lato:wght@300;400&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/assets/favicon/favicon.png">
     <link rel="stylesheet" href="/css/app.css?v=4">
-    <link rel="stylesheet" href="/css/game.css?v=5">
+    <link rel="stylesheet" href="/css/game.css?v=6">
     <link rel="stylesheet" href="/css/voice.css?v=4">
     <link rel="stylesheet" href="/css/tutorial.css?v=4">
 </head>
@@ -50,9 +50,18 @@
             <button class="game-btn game-btn--jekyll" id="jekyll-recall-btn" hidden>J &amp; H</button>
         </div>
 
+        <!-- Karten-Bestätigung: im Auto-Modus muss vor der ersten Nacht jeder
+             menschliche Spieler bestätigen, dass er seine Karte gesehen hat -->
+        <div class="card-confirm-panel" id="card-confirm-panel" hidden>
+            <p class="card-confirm-panel__hint" id="card-confirm-hint">Schau dir deine Karte an und best&auml;tige dann, dass du sie gesehen hast.</p>
+            <button class="night-confirm card-confirm-panel__btn" id="card-confirm-btn" disabled>Karte gesehen &#10003;</button>
+            <p class="card-confirm-panel__waiting" id="card-confirm-waiting" hidden></p>
+        </div>
+
         <!-- Spectator panel: shown after the player has died -->
         <div class="spectator-panel" id="spectator-panel" hidden>
             <p class="spectator-panel__eyebrow">&#9760; Geisterblick &mdash; du siehst jetzt alles</p>
+            <p class="spectator-panel__death-reason" id="death-reason" hidden></p>
             <p class="spectator-panel__status" id="spectator-status">&hellip;</p>
             <div class="spectator-roles" id="spectator-roles"></div>
             <div class="spectator-panel__log" id="spectator-log"></div>
@@ -97,6 +106,7 @@
                 <p class="go-reveal__label">Aufl&ouml;sung</p>
                 <div class="go-reveal__grid" id="game-over-reveal-grid"></div>
                 <ul class="go-reveal__notes" id="game-over-reveal-notes"></ul>
+                <button class="game-btn game-btn--report" id="go-report-btn" hidden>&#x1F4DC; Spielbericht anzeigen</button>
             </div>
 
             <div class="game-over-host-actions" id="game-over-host-actions" hidden>
@@ -105,6 +115,15 @@
             </div>
         </div>
     </div>
+
+    <!-- Spielbericht-Modal: kompletter Verlauf aller Nächte und Tage -->
+    <dialog class="modal" id="report-modal" aria-labelledby="report-modal-title">
+        <article class="modal__content modal__content--report">
+            <button class="modal__close" id="report-modal-close" aria-label="Schlie&szlig;en">&#x2715;</button>
+            <h2 class="modal__title" id="report-modal-title">&#x1F4DC; Spielbericht</h2>
+            <div class="report-log" id="report-log"></div>
+        </article>
+    </dialog>
 
     <!-- Info modal -->
     <dialog class="modal" id="info-modal" aria-labelledby="info-modal-title">
@@ -117,6 +136,9 @@
 
     <!-- Day interaction panel: shown during day-accusation and day-voting -->
     <div class="day-panel" id="day-panel" hidden>
+
+        <!-- Händler: wer gerade einkaufen ist, setzt diese Runde aus -->
+        <p class="day-panel__away-note" id="day-away-note" hidden></p>
 
         <!-- Accusation UI -->
         <div id="day-accusation-ui">
@@ -205,6 +227,48 @@
         <p class="magd-overlay__role-name" id="magd-role-name"></p>
         <p class="magd-overlay__faction" id="magd-faction"></p>
         <button class="night-confirm" id="magd-confirm">Verstanden &#10003;</button>
+    </div>
+
+    <!-- Gendarm: Tag-Eingriff vor der Abstimmung — Abfrage (nur Gendarm),
+         Enthüllung mit Zielwahl und Ergebnis (alle Spieler) -->
+    <div class="gendarm-overlay" id="gendarm-overlay" hidden>
+
+        <div class="gendarm-offer" id="gendarm-offer" hidden>
+            <div class="gendarm-badge">&#11088;</div>
+            <p class="gendarm-offer__title">Gendarm &mdash; willst du eingreifen?</p>
+            <p class="gendarm-offer__hint">Wenn du schie&szlig;t, erf&auml;hrt das ganze Dorf, wer du bist.<br>Erschie&szlig;t du eine Unschuldige, stirbst du ebenfalls.</p>
+            <p class="gendarm-offer__timer" id="gendarm-offer-timer">5</p>
+            <div class="gendarm-offer__actions">
+                <button class="day-btn day-btn--confirm" id="gendarm-yes">&#x1F52B; Ja, schie&szlig;en</button>
+                <button class="day-btn day-btn--skip" id="gendarm-no">Nein</button>
+            </div>
+        </div>
+
+        <div class="gendarm-reveal" id="gendarm-reveal" hidden>
+            <div class="gendarm-badge gendarm-badge--spin">&#11088;</div>
+            <h2 class="gendarm-reveal__name" id="gendarm-reveal-name"></h2>
+            <p class="gendarm-reveal__sub">ist der Gendarm!</p>
+            <p class="gendarm-reveal__status" id="gendarm-reveal-status">Er legt an&hellip;</p>
+            <div class="target-list" id="gendarm-target-list" hidden></div>
+            <button class="night-confirm" id="gendarm-shoot-btn" hidden>Erschie&szlig;en &#10003;</button>
+        </div>
+
+        <div class="gendarm-result" id="gendarm-result" hidden>
+            <p class="gendarm-result__eyebrow" id="gendarm-result-eyebrow"></p>
+            <div class="gendarm-result__card" id="gendarm-result-card"></div>
+            <p class="gendarm-result__text" id="gendarm-result-text"></p>
+        </div>
+
+    </div>
+
+    <!-- Zigeunerin: öffentlicher Rache-Fluch nach ihrem Anklage-Tod -->
+    <div class="curse-overlay" id="curse-overlay" hidden>
+        <div class="curse-box">
+            <p class="curse-box__eyebrow">&#x1F52E; Der Fluch der Zigeunerin</p>
+            <p class="curse-box__text" id="curse-text"></p>
+            <div class="target-list" id="curse-target-list" hidden></div>
+            <button class="night-confirm" id="curse-confirm-btn" hidden>Verfluchen &#10003;</button>
+        </div>
     </div>
 
     <!-- Hunter overlay: shown to Jäger when they must shoot -->
@@ -379,6 +443,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/game.js?v=5" type="module"></script>
+    <script src="/js/game.js?v=8" type="module"></script>
 </body>
 </html>

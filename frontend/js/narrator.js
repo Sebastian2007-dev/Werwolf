@@ -39,6 +39,9 @@ const PHASE_LABELS = {
     'day-accusation':     ['Anklage-Phase',      'Tag',    'Spieler nominieren Angeklagte…'],
     'day-voting':         ['Abstimmung',         'Tag',    'Spieler stimmen über die Angeklagten ab…'],
     'day-result':         ['Tagesergebnis',      'Tag',    'Sieh dir das Ergebnis an.'],
+    'gendarm-window':     ['Gendarm-Fenster',    'Tag',    'Der Gendarm entscheidet, ob er eingreift… (Weiter = überspringen)'],
+    'gendarm-shoot':      ['Gendarm schießt',    'Tag',    'Der Gendarm hat sich enthüllt und wählt sein Ziel…'],
+    'zigeunerin-curse':   ['Rache-Fluch',        'Tag',    'Die Zigeunerin verflucht öffentlich eine Person…'],
 };
 
 // ── Socket ────────────────────────────────────────────────────────────────────
